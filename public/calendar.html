@@ -1153,9 +1153,10 @@
 
   /* ---------- planner ---------- */
 
-  var COURSE_CODE_RE = /^([A-Z]{2,6})\s*(\d{4})$/;
+  var COURSE_CODE_RE = /^([A-Z]{2,6})\s*(\d{4}[A-Za-z]{0,3})(?:\s+-\s*(.+))?$/;
   var SECTION_HEADER_RE = /^([A-Za-z0-9]+-[A-Za-z0-9]+)\s*\(\d+\)/;
   var SESSION_ROW_RE = /^(Mo|Tu|We|Th|Fr|Sa|Su)(\d{1,2}:\d{2}(?:AM|PM))(\d{1,2}:\d{2}(?:AM|PM))(.+?)(\d{1,2}\/\d{1,2}\/\d{4}\s*-\s*\d{1,2}\/\d{1,2}\/\d{4})$/;
+  var SESSION_ROW_TAB_RE = /^(Mo|Tu|We|Th|Fr|Sa|Su)\t(\d{1,2}:\d{2}(?:AM|PM))\t(\d{1,2}:\d{2}(?:AM|PM))\t(.+?)\t(.+?)\t(\d{1,2}\/\d{1,2}\/\d{4}\s*-\s*\d{1,2}\/\d{1,2}\/\d{4})$/;
   var DAY_MAP = { Mo: 1, Tu: 2, We: 3, Th: 4, Fr: 5, Sa: 6, Su: 0 };
 
   function splitRoomInstructor(mid) {
@@ -1173,12 +1174,13 @@
     for (var i = 0; i < lines.length; i++) {
       var ln = lines[i];
       if (/^units$/i.test(ln) && i + 1 < lines.length && /^(\d+(?:\.\d+)?)$/.test(lines[i + 1])) {
-        pendingUnits = parseFloat(lines[i + 1]);
+        var uv = parseFloat(lines[i + 1]);
+        if (cur) { cur.units = uv; } else { pendingUnits = uv; }
         continue;
       }
       var cm = ln.match(COURSE_CODE_RE);
       if (cm) {
-        cur = { code: cm[1] + " " + cm[2], units: pendingUnits, name: "", sections: [] };
+        cur = { code: cm[1] + " " + cm[2], units: pendingUnits, name: cm[3] || "", sections: [] };
         pendingUnits = null;
         courses.push(cur);
         curSection = null;
@@ -1195,13 +1197,20 @@
       }
       if (!curSection) continue;
       var sr = ln.match(SESSION_ROW_RE);
-      if (sr) {
-        var mid = splitRoomInstructor(sr[4]);
-        var parts = sr[5].split("-");
+      var st = sr ? null : ln.match(SESSION_ROW_TAB_RE);
+      if (sr || st) {
+        var m = sr || st;
+        var room, instructor, parts;
+        if (st) {
+          room = st[4]; instructor = st[5]; parts = st[6].split("-");
+        } else {
+          var mid = splitRoomInstructor(sr[4]);
+          room = mid.room; instructor = mid.instructor; parts = sr[5].split("-");
+        }
         curSection.sessions.push({
-          dayCode: DAY_MAP[sr[1]], dayStr: sr[1],
-          startMin: parseTime(sr[2]), endMin: parseTime(sr[3]),
-          room: mid.room, instructor: mid.instructor,
+          dayCode: DAY_MAP[m[1]], dayStr: m[1],
+          startMin: parseTime(m[2]), endMin: parseTime(m[3]),
+          room: room, instructor: instructor,
           startDate: parseDate(parts[0]), endDate: parseDate(parts[1].trim())
         });
       }
