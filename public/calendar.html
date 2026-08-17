@@ -409,6 +409,64 @@
   .mini-btn:hover { background: #1d4ed8; }
   .mini-btn.ghost { background: #2a3040; color: #c9d0e0; }
   .mini-btn.ghost:hover { background: #232a3a; }
+
+  .mode-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+  .mode-row label { font-size: 12px; color: #9aa3b5; }
+  #planMode {
+    flex: 1;
+    background: #141823;
+    color: #d9def0;
+    border: 1px solid #2c3342;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 13px;
+  }
+  #planMode:focus { outline: none; border-color: var(--accent); }
+  .holiday-row { display: flex; gap: 6px; margin-bottom: 6px; }
+  #holidayInput {
+    flex: 1;
+    min-width: 0;
+    background: #141823;
+    color: #d9def0;
+    border: 1px solid #2c3342;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  #holidayInput:focus { outline: none; border-color: var(--accent); }
+  .holiday-list { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+  .holiday-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: #2a3040;
+    border: 1px solid #394154;
+    border-radius: 12px;
+    padding: 2px 6px 2px 8px;
+    font-size: 11px;
+    color: #c9d0e0;
+  }
+  .holiday-chip .x {
+    background: none;
+    border: none;
+    color: #9aa3b5;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    padding: 0 2px;
+  }
+  .holiday-chip .x:hover { color: #f87171; }
+  .plan-stats { font-size: 11px; color: #9aa3b5; margin-top: 8px; line-height: 1.6; }
+  .plan-stats b { color: #c9d0e0; }
+
+  .app-version {
+    font-size: 11px;
+    color: #5c6474;
+    text-align: center;
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid #2c3342;
+  }
 </style>
 </head>
 <body>
@@ -447,9 +505,22 @@
         <h2>Planner</h2>
         <button id="clearPlanBtn" class="link-btn">Clear</button>
       </div>
+      <div class="mode-row">
+        <label for="planMode">Mode</label>
+        <select id="planMode" title="How the planner picks sections">
+          <option value="standard">Standard</option>
+          <option value="holidays">Holidays</option>
+          <option value="balanced">Balanced</option>
+        </select>
+      </div>
+      <div class="holiday-row">
+        <input id="holidayInput" placeholder="Holidays: 01/10/2026, 09/10/2026" spellcheck="false">
+        <button id="holidayAddBtn" class="link-btn">Add</button>
+      </div>
+      <div id="holidayList"></div>
       <div id="stagedList"></div>
       <div id="planStatus"></div>
-      <button id="findPlanBtn" class="btn">Find conflict-free schedule</button>
+      <button id="findPlanBtn" class="btn">Find schedule</button>
       <div id="planResult"></div>
       <button id="applyPlanBtn" class="btn" style="display:none">Show plan on calendar</button>
     </section>
@@ -461,6 +532,8 @@
       </div>
       <ul id="historyList"></ul>
     </section>
+
+    <div id="appVersion" class="app-version" title="Deployed app version">v6</div>
   </aside>
 
   <main class="main">
@@ -523,8 +596,18 @@
   var stagedCourses = [];
   var locks = {};
   var planResult = null;
+  var planMode = "standard";
+  var holidays = [];
   var PLANNER_KEY = "enroll_planner_courses";
   var PLANNER_LOCK_KEY = "enroll_planner_locks";
+  var PLANNER_MODE_KEY = "enroll_planner_mode";
+  var PLANNER_HOLIDAY_KEY = "enroll_planner_holidays";
+  var APP_VERSION = "v6";
+  var planModeEl = document.getElementById("planMode");
+  var holidayInput = document.getElementById("holidayInput");
+  var holidayAddBtn = document.getElementById("holidayAddBtn");
+  var holidayListEl = document.getElementById("holidayList");
+  var appVersionEl = document.getElementById("appVersion");
 
   var entries = load();
   var viewDate = anchorToFirst();
@@ -1259,9 +1342,63 @@
     return uniq.join(" + ");
   }
 
+  function prepSections() {
+    stagedCourses.forEach(function (c) {
+      c.sections.forEach(function (s) {
+        s._minByDay = [0, 0, 0, 0, 0, 0, 0];
+        s._totalMin = 0;
+        s._holidayMin = 0;
+        s.sessions.forEach(function (ss) {
+          var dur = ss.endMin - ss.startMin;
+          s._minByDay[ss.dayCode] += dur;
+          s._totalMin += dur;
+        });
+        holidays.forEach(function (h) {
+          s.sessions.forEach(function (ss) {
+            if (h >= ss.startDate && h <= ss.endDate && h.getDay() === ss.dayCode) {
+              s._holidayMin += (ss.endMin - ss.startMin);
+            }
+          });
+        });
+      });
+    });
+  }
+
+  function ssdOf(loads) {
+    var mean = 0, d;
+    for (d = 0; d < 7; d++) mean += loads[d];
+    mean /= 7;
+    var ssd = 0;
+    for (d = 0; d < 7; d++) { var v = loads[d] - mean; ssd += v * v; }
+    return ssd;
+  }
+
+  /* Weighted score: conflicts always dominate, then the secondary objective
+     (holiday minutes first, then daily-load balance). */
+  function scoreForMode(conflicts, holidayMin, loads) {
+    var base = conflicts * 1000000000;
+    if (planMode === "standard") return base;
+    if (planMode === "holidays") return base + holidayMin * 1000000 + ssdOf(loads);
+    return base + ssdOf(loads); /* balanced */
+  }
+
+  function secondaryOf(assign) {
+    if (planMode === "standard") return 0;
+    var hol = 0, loads = [0, 0, 0, 0, 0, 0, 0];
+    stagedCourses.forEach(function (c) {
+      var si = assign[c.code];
+      if (si == null) return;
+      var sec = c.sections[si];
+      hol += sec._holidayMin;
+      for (var d = 0; d < 7; d++) loads[d] += sec._minByDay[d];
+    });
+    return (planMode === "holidays" ? hol * 1000000 : 0) + ssdOf(loads);
+  }
+
   function findSchedule() {
     var n = stagedCourses.length;
-    if (!n) return { assign: null, conflicts: Infinity };
+    if (!n) return { assign: null, conflicts: Infinity, secondary: Infinity };
+    prepSections();
     var order = [];
     for (var i = 0; i < n; i++) order.push(i);
     order.sort(function (a, b) {
@@ -1271,17 +1408,26 @@
       return stagedCourses[a].sections.length - stagedCourses[b].sections.length;
     });
 
-    /* Phase 1: exact zero-conflict search (prune the moment a conflict appears) */
-    var zAssign = null;
+    /* Phase 1: exact zero-conflict search, keeping the best secondary score */
+    var best = null;
     (function () {
       var cur = {};
-      var budget = 200000;
+      var nodes = 0, BUDGET = 250000;
       function dfs(pos) {
-        if (budget-- <= 0) return false;
-        if (pos === order.length) { zAssign = Object.assign({}, cur); return true; }
+        if (nodes++ > BUDGET) return;
+        if (pos === order.length) {
+          var sec = secondaryOf(cur);
+          if (!best || sec < best.secondary) best = { assign: Object.assign({}, cur), secondary: sec };
+          return;
+        }
         var ci = order[pos];
         var c = stagedCourses[ci];
         var opts = locks[c.code] != null ? [locks[c.code]] : c.sections.map(function (_, j) { return j; });
+        opts.sort(function (a, b) {
+          var ka = planMode === "holidays" ? c.sections[a]._holidayMin : c.sections[a]._totalMin;
+          var kb = planMode === "holidays" ? c.sections[b]._holidayMin : c.sections[b]._totalMin;
+          return ka - kb;
+        });
         for (var k = 0; k < opts.length; k++) {
           var si = opts[k];
           var ok = true;
@@ -1294,47 +1440,48 @@
           }
           if (!ok) continue;
           cur[c.code] = si;
-          if (dfs(pos + 1)) return true;
+          dfs(pos + 1);
           delete cur[c.code];
+          if (nodes > BUDGET) return;
         }
-        return false;
       }
       dfs(0);
     })();
-    if (zAssign) return { assign: zAssign, conflicts: 0 };
+    if (best) return { assign: best.assign, conflicts: 0, secondary: best.secondary };
 
-    /* Phase 2: no zero-conflict combo — greedy + local search for a near-minimal one */
+    /* Phase 2: no zero-conflict combo — greedy + incremental local search on the score */
     var cur = {};
+    var loads = [0, 0, 0, 0, 0, 0, 0];
+    var conflicts = 0, holidayTotal = 0;
     order.forEach(function (ci) {
       var c = stagedCourses[ci];
       var opts = locks[c.code] != null ? [locks[c.code]] : c.sections.map(function (_, j) { return j; });
-      var bestSi = opts[0], bestAdd = Infinity;
+      var bestSi = opts[0], bestScore = Infinity;
       opts.forEach(function (si) {
-        var add = 0;
+        var sec = c.sections[si];
+        var addC = 0;
         order.forEach(function (pci) {
-          if (pci === ci) return;
-          if (cur[stagedCourses[pci].code] == null) return;
-          if (sectionsConflict(stagedCourses[pci].sections[cur[stagedCourses[pci].code]], c.sections[si])) add++;
+          if (pci === ci || cur[stagedCourses[pci].code] == null) return;
+          if (sectionsConflict(stagedCourses[pci].sections[cur[stagedCourses[pci].code]], sec)) addC++;
         });
-        if (add < bestAdd) { bestAdd = add; bestSi = si; }
+        var tLoads = loads.slice();
+        for (var d = 0; d < 7; d++) tLoads[d] += sec._minByDay[d];
+        var sc = scoreForMode(conflicts + addC, holidayTotal + sec._holidayMin, tLoads);
+        if (sc < bestScore) { bestScore = sc; bestSi = si; }
       });
       cur[c.code] = bestSi;
+      var picked = c.sections[bestSi];
+      for (var d2 = 0; d2 < 7; d2++) loads[d2] += picked._minByDay[d2];
+      holidayTotal += picked._holidayMin;
+      order.forEach(function (pci) {
+        if (pci === ci || cur[stagedCourses[pci].code] == null) return;
+        if (sectionsConflict(stagedCourses[pci].sections[cur[stagedCourses[pci].code]], picked)) conflicts++;
+      });
     });
 
-    function totalConflicts() {
-      var sum = 0;
-      for (var a = 0; a < order.length; a++) {
-        for (var b = a + 1; b < order.length; b++) {
-          var ca = stagedCourses[order[a]], cb = stagedCourses[order[b]];
-          if (sectionsConflict(ca.sections[cur[ca.code]], cb.sections[cur[cb.code]])) sum++;
-        }
-      }
-      return sum;
-    }
-
-    var total = totalConflicts();
+    var currentScore = scoreForMode(conflicts, holidayTotal, loads);
     var improved = true, iters = 0;
-    while (improved && iters++ < 300) {
+    while (improved && iters++ < 400) {
       improved = false;
       for (var a = 0; a < order.length; a++) {
         var ci = order[a];
@@ -1343,23 +1490,67 @@
         var curSi = cur[c.code];
         for (var j = 0; j < c.sections.length; j++) {
           if (j === curSi) continue;
-          var before = 0, after = 0;
+          var aSec = c.sections[curSi], jSec = c.sections[j];
+          var deltaC = 0;
           for (var b = 0; b < order.length; b++) {
             if (b === a) continue;
-            var cb2 = stagedCourses[order[b]];
-            if (sectionsConflict(c.sections[curSi], cb2.sections[cur[cb2.code]])) before++;
-            if (sectionsConflict(c.sections[j], cb2.sections[cur[cb2.code]])) after++;
+            var bc = stagedCourses[order[b]];
+            var bSec = bc.sections[cur[bc.code]];
+            if (sectionsConflict(jSec, bSec)) deltaC++;
+            if (sectionsConflict(aSec, bSec)) deltaC--;
           }
-          if (after < before) {
+          var nConf = conflicts + deltaC;
+          var nLoads = loads.slice();
+          for (var d3 = 0; d3 < 7; d3++) nLoads[d3] += (jSec._minByDay[d3] - aSec._minByDay[d3]);
+          var nHol = holidayTotal + (jSec._holidayMin - aSec._holidayMin);
+          var nScore = scoreForMode(nConf, nHol, nLoads);
+          if (nScore < currentScore) {
             cur[c.code] = j;
-            total -= (before - after);
+            conflicts = nConf; holidayTotal = nHol; loads = nLoads;
+            currentScore = nScore;
             improved = true;
             break;
           }
         }
       }
     }
-    return { assign: cur, conflicts: total };
+    return { assign: cur, conflicts: conflicts, secondary: secondaryOf(cur) };
+  }
+
+  function fmtMin(m) {
+    if (!m || m <= 0) return "0h";
+    var h = Math.floor(m / 60), mm = m % 60;
+    return h + "h" + (mm ? " " + mm + "m" : "");
+  }
+
+  function planStats(assign) {
+    var loads = [0, 0, 0, 0, 0, 0, 0];
+    var total = 0;
+    stagedCourses.forEach(function (c) {
+      var si = assign[c.code];
+      if (si == null) return;
+      var md = c.sections[si]._minByDay;
+      for (var d = 0; d < 7; d++) { loads[d] += md[d]; total += md[d]; }
+    });
+    var active = 0;
+    loads.forEach(function (v) { if (v > 0) active++; });
+    var holDates = [], holidayTotal = 0;
+    holidays.forEach(function (h) {
+      var on = false;
+      stagedCourses.forEach(function (c) {
+        if (on) return;
+        var si = assign[c.code];
+        if (si == null) return;
+        c.sections[si].sessions.forEach(function (ss) {
+          if (h >= ss.startDate && h <= ss.endDate && h.getDay() === ss.dayCode) {
+            on = true;
+            holidayTotal += (ss.endMin - ss.startMin);
+          }
+        });
+      });
+      if (on) holDates.push(fmtDate(h));
+    });
+    return { loads: loads, total: total, avg: active ? total / active : 0, holDates: holDates, holidayTotal: holidayTotal };
   }
 
   function planToEntries(assign) {
@@ -1405,6 +1596,8 @@
     });
     try { localStorage.setItem(PLANNER_KEY, JSON.stringify(data)); } catch (e) {}
     try { localStorage.setItem(PLANNER_LOCK_KEY, JSON.stringify(locks)); } catch (e) {}
+    try { localStorage.setItem(PLANNER_MODE_KEY, planMode); } catch (e) {}
+    try { localStorage.setItem(PLANNER_HOLIDAY_KEY, JSON.stringify(holidays.map(function (h) { return h.getTime(); }))); } catch (e) {}
   }
 
   function loadPlanner() {
@@ -1431,6 +1624,42 @@
       }
     } catch (e) { stagedCourses = []; }
     try { locks = JSON.parse(localStorage.getItem(PLANNER_LOCK_KEY) || "{}"); } catch (e) { locks = {}; }
+    try { planMode = localStorage.getItem(PLANNER_MODE_KEY) || "standard"; } catch (e) { planMode = "standard"; }
+    if (planModeEl) planModeEl.value = planMode;
+    try {
+      var rawH = localStorage.getItem(PLANNER_HOLIDAY_KEY);
+      holidays = rawH ? JSON.parse(rawH).map(function (t) { return new Date(t); }) : [];
+    } catch (e) { holidays = []; }
+    renderHolidayList();
+  }
+
+  function renderHolidayList() {
+    holidayListEl.innerHTML = "";
+    if (!holidays.length) return;
+    var wrap = document.createElement("div");
+    wrap.className = "holiday-list";
+    holidays.forEach(function (h) {
+      var chip = document.createElement("span");
+      chip.className = "holiday-chip";
+      chip.textContent = fmtDate(h);
+      var x = document.createElement("button");
+      x.className = "x";
+      x.textContent = "\u00d7";
+      x.title = "Remove holiday";
+      x.onclick = function (d) {
+        return function () {
+          holidays = holidays.filter(function (y) { return y.getTime() !== d.getTime(); });
+          planResult = null;
+          savePlanner();
+          renderHolidayList();
+          renderPlanner();
+          renderPlanResult();
+        };
+      }(h);
+      chip.appendChild(x);
+      wrap.appendChild(chip);
+    });
+    holidayListEl.appendChild(wrap);
   }
 
   function renderPlanner() {
@@ -1560,6 +1789,30 @@
       list.appendChild(line);
     });
     planResultEl.appendChild(list);
+
+    var stats = planStats(planResult.assign);
+    var days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    var parts = [];
+    for (var d = 0; d < 7; d++) parts.push(days[d] + " " + fmtMin(stats.loads[d]));
+    var st = document.createElement("div");
+    st.className = "plan-stats";
+    st.innerHTML = "<b>Weekly load:</b> " + esc(parts.join(" \u00b7 ")) +
+      "<br><b>Average:</b> " + fmtMin(Math.round(stats.avg)) + "/day";
+    planResultEl.appendChild(st);
+
+    if (planMode === "holidays") {
+      if (stats.holDates.length) {
+        var hw = document.createElement("div");
+        hw.className = "plan-msg warn";
+        hw.textContent = "\u26a0 Classes fall on holidays (" + fmtMin(stats.holidayTotal) + "): " + stats.holDates.join(", ");
+        planResultEl.appendChild(hw);
+      } else {
+        var ho = document.createElement("div");
+        ho.className = "plan-msg ok";
+        ho.textContent = "\u2713 All " + holidays.length + " holiday date" + (holidays.length === 1 ? "" : "s") + " free of classes.";
+        planResultEl.appendChild(ho);
+      }
+    }
   }
 
   function render() {
@@ -1709,6 +1962,40 @@
     }
   };
 
+  planModeEl.onchange = function () {
+    planMode = planModeEl.value;
+    planResult = null;
+    savePlanner();
+    renderPlanner();
+    renderPlanResult();
+  };
+
+  holidayAddBtn.onclick = function () {
+    var raw = holidayInput.value;
+    var parts = raw.split(/[\s,;]+/).filter(Boolean);
+    var added = 0;
+    parts.forEach(function (p) {
+      var d = parseDate(p);
+      if (!d) return;
+      var dup = holidays.some(function (h) { return h.getTime() === d.getTime(); });
+      if (dup) return;
+      holidays.push(d);
+      added++;
+    });
+    holidays.sort(function (a, b) { return a - b; });
+    holidayInput.value = "";
+    if (added) {
+      planResult = null;
+      savePlanner();
+      renderHolidayList();
+      renderPlanner();
+      renderPlanResult();
+      setStatus("Added " + added + " holiday date" + (added > 1 ? "s" : "") + ".");
+    } else {
+      setStatus("No valid dates found \u2014 use dd/mm/yyyy.", true);
+    }
+  };
+
   applyPlanBtn.onclick = function () {
     if (!planResult || !planResult.assign) return;
     if (entries.length) {
@@ -1747,6 +2034,7 @@
   }
 
   renderWeekdays();
+  if (appVersionEl) appVersionEl.textContent = APP_VERSION;
   loadPlanner();
   renderPlanner();
   renderPlanResult();
