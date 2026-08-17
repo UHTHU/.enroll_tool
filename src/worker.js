@@ -36,6 +36,19 @@ export default {
     // redirect to /calendar.html when no index exists.
     const assetResponse = await env.ASSETS.fetch(request);
     if (assetResponse.status !== 404 || path === '/') {
+      // The HTML shell must always be revalidated so browsers/CDNs pick up
+      // the newest deploy instead of serving a stale cached copy.
+      if (assetResponse.status === 200 && (path === '/' || path.endsWith('.html'))) {
+        const headers = new Headers(assetResponse.headers);
+        headers.set('Cache-Control', 'no-cache, no-store, must-revalidate');
+        headers.set('Pragma', 'no-cache');
+        headers.set('Expires', '0');
+        return new Response(assetResponse.body, {
+          status: assetResponse.status,
+          statusText: assetResponse.statusText,
+          headers: headers,
+        });
+      }
       return assetResponse;
     }
 
