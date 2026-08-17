@@ -389,6 +389,8 @@
   .sec-row.chosen { background: rgba(37, 99, 235, 0.25); outline: 1px solid var(--accent); }
   .sec-row.chosen .sec-code::after { content: " \u2713"; color: #7fd98b; }
   .sec-row.locked { outline: 1px dashed #9aa3b5; }
+  .sec-row.empty { outline: 1px dashed #f87171; }
+  .sec-row.empty .sec-code::after { content: " \u26a0 no times"; color: #f87171; font-weight: 600; }
   .plan-msg { font-size: 12px; margin-top: 10px; line-height: 1.5; }
   .plan-msg.ok { color: #7fd98b; }
   .plan-msg.warn { color: #fbbf24; }
@@ -592,6 +594,14 @@
   var stageBtn = document.getElementById("stageBtn");
   var findPlanBtn = document.getElementById("findPlanBtn");
   var clearPlanBtn = document.getElementById("clearPlanBtn");
+
+  window.onerror = function (msg, src, line) {
+    if (statusEl) {
+      statusEl.textContent = "Error: " + msg + " (line " + line + ")";
+      statusEl.className = "error";
+    }
+    return false;
+  };
 
   var stagedCourses = [];
   var locks = {};
@@ -1253,9 +1263,13 @@
 
   var COURSE_CODE_RE = /^([A-Z]{2,6})\s*(\d{4}[A-Za-z]{0,3})(?:\s+-\s*(.+))?$/;
   var SECTION_HEADER_RE = /^([A-Za-z0-9]+-[A-Za-z0-9]+)\s*\(\d+\)/;
-  var SESSION_ROW_RE = /^(Mo|Tu|We|Th|Fr|Sa|Su)(\d{1,2}:\d{2}(?:AM|PM))(\d{1,2}:\d{2}(?:AM|PM))(.+?)(\d{1,2}\/\d{1,2}\/\d{4}\s*-\s*\d{1,2}\/\d{1,2}\/\d{4})$/;
-  var SESSION_ROW_TAB_RE = /^(Mo|Tu|We|Th|Fr|Sa|Su)\t(\d{1,2}:\d{2}(?:AM|PM))\t(\d{1,2}:\d{2}(?:AM|PM))\t(.+?)\t(.+?)\t(\d{1,2}\/\d{1,2}\/\d{4}\s*-\s*\d{1,2}\/\d{1,2}\/\d{4})$/;
-  var DAY_MAP = { Mo: 1, Tu: 2, We: 3, Th: 4, Fr: 5, Sa: 6, Su: 0 };
+  var DAY_TOK = "(Mo|Tu|We|Th|Fr|Sa|Su|Mon|Tue|Wed|Thu|Fri|Sat|Sun)";
+  var TIME_TOK = "(\\d{1,2}:\\d{2}(?:AM|PM))";
+  var DATE_TOK = "(\\d{1,2}\\/\\d{1,2}\\/\\d{4}\\s*-\\s*\\d{1,2}\\/\\d{1,2}\\/\\d{4})";
+  var SESSION_ROW_RE = new RegExp("^" + DAY_TOK + TIME_TOK + TIME_TOK + "(.+?)" + DATE_TOK + "$");
+  var SESSION_ROW_TAB_RE = new RegExp("^" + DAY_TOK + "\\t" + TIME_TOK + "\\t" + TIME_TOK + "\\t(.+?)\\t(.+?)\\t" + DATE_TOK + "$");
+  var SESSION_ROW_SPACE_RE = new RegExp("^" + DAY_TOK + "\\s+" + TIME_TOK + "\\s+" + TIME_TOK + "\\s+(.+?)\\s+" + DATE_TOK + "$");
+  var DAY_MAP = { Mo: 1, Tu: 2, We: 3, Th: 4, Fr: 5, Sa: 6, Su: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 0 };
 
   function splitRoomInstructor(mid) {
     if (/Staff$/.test(mid)) return { room: mid.slice(0, -5), instructor: "Staff" };
@@ -1296,11 +1310,15 @@
       if (!curSection) continue;
       var sr = ln.match(SESSION_ROW_RE);
       var st = sr ? null : ln.match(SESSION_ROW_TAB_RE);
-      if (sr || st) {
-        var m = sr || st;
+      var sp = sr || st ? null : ln.match(SESSION_ROW_SPACE_RE);
+      if (sr || st || sp) {
+        var m = sr || st || sp;
         var room, instructor, parts;
         if (st) {
           room = st[4]; instructor = st[5]; parts = st[6].split("-");
+        } else if (sp) {
+          var mid = splitRoomInstructor(sp[4]);
+          room = mid.room; instructor = mid.instructor; parts = sp[5].split("-");
         } else {
           var mid = splitRoomInstructor(sr[4]);
           room = mid.room; instructor = mid.instructor; parts = sr[5].split("-");
@@ -1735,6 +1753,7 @@
           label.appendChild(cb); label.appendChild(codeEl); label.appendChild(m);
           if (locks[c.code] === si) label.classList.add("locked");
           if (chosenIdx === si) label.classList.add("chosen");
+          if (!sec.sessions.length) label.classList.add("empty");
           secs.appendChild(label);
         });
         card.appendChild(secs);
@@ -1767,6 +1786,19 @@
     planResultEl.innerHTML = "";
     applyPlanBtn.style.display = (planResult && planResult.assign && stagedCourses.length) ? "block" : "none";
     if (!planResult || !planResult.assign || !stagedCourses.length) return;
+
+    var emptyChosen = stagedCourses.filter(function (c) {
+      var si = planResult.assign[c.code];
+      return si == null || !c.sections[si].sessions.length;
+    }).length;
+    if (emptyChosen) {
+      var ew = document.createElement("div");
+      ew.className = "plan-msg warn";
+      ew.textContent = "\u26a0 " + emptyChosen + " course" + (emptyChosen > 1 ? "s" : "") +
+        " were assigned sections with no session times \u2014 the weekly load is missing those hours. Re-stage those course pages.";
+      planResultEl.appendChild(ew);
+    }
+
     if (planResult.conflicts === 0) {
       var ok = document.createElement("div");
       ok.className = "plan-msg ok";
@@ -1998,35 +2030,21 @@
 
   applyPlanBtn.onclick = function () {
     if (!planResult || !planResult.assign) return;
-    if (entries.length) {
-      var box = document.createElement("div");
-      box.className = "plan-msg warn apply-confirm";
-      var msg = document.createElement("span");
-      msg.textContent = "Replace the " + entries.length + " existing calendar entr" + (entries.length > 1 ? "ies" : "y") + " with this plan? ";
-      var yes = document.createElement("button");
-      yes.type = "button";
-      yes.className = "mini-btn";
-      yes.textContent = "Replace";
-      var no = document.createElement("button");
-      no.type = "button";
-      no.className = "mini-btn ghost";
-      no.textContent = "Cancel";
-      yes.onclick = function () { doApplyPlan(); };
-      no.onclick = function () { if (box.parentNode) box.parentNode.removeChild(box); };
-      box.appendChild(msg); box.appendChild(yes); box.appendChild(no);
-      planResultEl.appendChild(box);
-      return;
-    }
     doApplyPlan();
   };
 
   function doApplyPlan() {
     try {
+      var prevCount = entries.length;
       entries = planToEntries(planResult.assign);
       save();
+      viewMode = "month";
+      viewToggle.textContent = "Week";
       viewDate = anchorToFirst();
       render();
-      setStatus("Planned schedule loaded \u2014 " + entries.length + " session" + (entries.length > 1 ? "s" : "") + " on the calendar.");
+      setStatus("Planned schedule loaded \u2014 " + entries.length + " session" + (entries.length > 1 ? "s" : "") +
+        " on the calendar (" + (prevCount ? "replaced " + prevCount + " previous" : "calendar was empty") + ").");
+      if (cal.scrollIntoView) cal.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (err) {
       if (window.console && window.console.error) window.console.error(err);
       setStatus("Error loading the plan: " + (err && err.message ? err.message : err), true);
