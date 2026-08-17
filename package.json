@@ -1,0 +1,16 @@
+{
+  "name": "enroll-calendar",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Course calendar app deployed on Cloudflare Workers (static + worker).",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "preview": "wrangler dev --remote",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "wrangler": "^4.5.0"
+  }
+}

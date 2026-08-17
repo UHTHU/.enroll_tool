@@ -1,0 +1,17 @@
+name = "enroll-calendar"
+main = "src/worker.js"
+compatibility_date = "2026-08-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Workers.dev route (disable after attaching a custom domain).
+workers_dev = true
+
+# Workers Static Assets: serve everything under ./public at the edge.
+# The assets binding is bucketed so requests that don't match an asset
+# fall through to the Worker's fetch handler.
+[assets]
+directory = "./public"
+not_found_handling = "none"  # let the Worker fall through to its own 404 handling
+
+# Replace with your own routes/custom domain if you have one:
+# routes = [{ pattern = "calendar.example.com/*", custom_domain = true }]
