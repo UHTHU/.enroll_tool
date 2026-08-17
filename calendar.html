@@ -1,0 +1,978 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Course Calendar</title>
+<style>
+  :root {
+    --sidebar-bg: #1f2430;
+    --sidebar-fg: #e6e8ee;
+    --accent: #2563eb;
+    --danger: #dc2626;
+    --border: #dfe2e8;
+    --main-bg: #f4f5f7;
+    --card-bg: #ffffff;
+    --muted: #6b7280;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    background: var(--main-bg);
+    color: #1f2430;
+  }
+  .app { display: flex; height: 100vh; }
+
+  .sidebar {
+    width: 380px;
+    min-width: 320px;
+    background: var(--sidebar-bg);
+    color: var(--sidebar-fg);
+    padding: 18px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+  .sidebar h1 {
+    margin: 0;
+    font-size: 20px;
+    letter-spacing: 0.5px;
+  }
+  .sidebar h2 {
+    margin: 0;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #9aa3b5;
+  }
+
+  .input-card label {
+    display: block;
+    font-size: 12px;
+    color: #9aa3b5;
+    margin-bottom: 6px;
+  }
+  #inputText {
+    width: 100%;
+    height: 210px;
+    resize: vertical;
+    background: #141823;
+    color: #d9def0;
+    border: 1px solid #2c3342;
+    border-radius: 8px;
+    padding: 10px;
+    font-family: Consolas, "Courier New", monospace;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  #inputText:focus { outline: none; border-color: var(--accent); }
+  .btn {
+    width: 100%;
+    margin-top: 10px;
+    padding: 10px;
+    border: none;
+    border-radius: 8px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn:hover { background: #1d4ed8; }
+  .hint {
+    font-size: 11px;
+    color: #9aa3b5;
+    margin: 8px 0 0;
+    line-height: 1.5;
+  }
+  #status {
+    min-height: 16px;
+    font-size: 12px;
+    margin-top: 8px;
+    color: #7fd98b;
+  }
+  #status.error { color: #f87171; }
+
+  .history-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .link-btn {
+    background: none;
+    border: none;
+    color: #9aa3b5;
+    cursor: pointer;
+    font-size: 12px;
+    text-decoration: underline;
+  }
+  .link-btn:hover { color: #f87171; }
+  #historyList {
+    list-style: none;
+    margin: 8px 0 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    max-height: 44vh;
+    overflow-y: auto;
+  }
+  .hist-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #2a3040;
+    border-radius: 8px;
+    padding: 8px 10px;
+  }
+  .hist-item.batch {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+  .hist-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .hist-sublist {
+    list-style: none;
+    margin: 0;
+    padding: 0 0 0 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .hist-item.sub {
+    background: #232a3a;
+    padding: 6px 8px;
+  }
+  .swatch {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+  }
+  .hist-info { flex: 1; min-width: 0; }
+  .hist-topic {
+    font-size: 13px;
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .hist-meta {
+    font-size: 11px;
+    color: #9aa3b5;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .del {
+    background: none;
+    border: none;
+    color: #9aa3b5;
+    font-size: 18px;
+    cursor: pointer;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 4px;
+  }
+  .del:hover { color: #f87171; background: rgba(248,113,113,.15); }
+  .none { color: #9aa3b5; font-size: 12px; }
+
+  .main {
+    flex: 1;
+    padding: 22px;
+    overflow-y: auto;
+  }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 14px;
+  }
+  .toolbar h2 { margin: 0; font-size: 20px; flex: 1; text-align: center; }
+  .nav-btn {
+    width: 36px;
+    height: 36px;
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+    border-radius: 8px;
+    font-size: 18px;
+    cursor: pointer;
+  }
+  .nav-btn:hover { background: #eef0f4; }
+  .toolbar .btn {
+    width: auto;
+    margin: 0;
+    padding: 8px 14px;
+    font-size: 13px;
+  }
+
+  .weekdays {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  .weekdays div {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--muted);
+    text-transform: uppercase;
+    padding: 4px 0;
+  }
+  .calendar {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 6px;
+  }
+  .day-cell {
+    min-height: 92px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px;
+    position: relative;
+    overflow: visible;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .day-cell.empty { background: transparent; border-color: transparent; }
+  .day-num {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 3px;
+  }
+  .day-cell.today { outline: 2px solid var(--accent); }
+  .day-cell.has-conflict { border-color: var(--danger); box-shadow: inset 0 0 0 1px var(--danger); }
+  .conflict-dot {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--danger);
+  }
+  .chip {
+    font-size: 11px;
+    color: #fff;
+    padding: 2px 5px;
+    border-radius: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: default;
+    box-sizing: border-box;
+    display: block;
+    line-height: 1.2;
+    flex: 0 0 auto;
+  }
+
+  .conflicts-card {
+    margin-top: 20px;
+    background: var(--card-bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px;
+  }
+  .semester-credit {
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1e40af;
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+    font-size: 13px;
+    line-height: 1.5;
+  }
+  .semester-credit .credit-value {
+    font-weight: 700;
+    font-size: 15px;
+  }
+  .conflicts-card h2 {
+    margin: 0 0 10px;
+    font-size: 14px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+  }
+  .conflict {
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    color: #991b1b;
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    font-size: 13px;
+    line-height: 1.4;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <h1>Course Calendar</h1>
+
+    <section class="input-card">
+      <label for="inputText">Paste schedule text</label>
+      <textarea id="inputText" spellcheck="false" placeholder="1A&#10;--&#10;037006_1B1A0 001&#10;Th 3:00PM - 4:50PM&#10;MWT1&#10;Staff&#10;03/09/2026 - 24/09/2026&#10;&#10;&#10;037006_1B1A0 002&#10;Th 3:00PM - 4:50PM&#10;MWT1&#10;Staff&#10;08/10/2026 - 08/10/2026"></textarea>
+      <button id="addBtn" class="btn">Add to Calendar</button>
+      <div id="status"></div>
+      <p class="hint">
+        Handles both formats: lines ending in a date range like
+        <code>03/09/2026 - 24/09/2026</code>. Works with the original
+        Topic / Days &amp; Times / Room / Instructor layout, and the
+        Section Details layout (Days / Start / End / Room / Instructor / Dates).
+        Paste as many entries as you like, with or without the header row.
+        In the calendar, each day's courses are sorted by time and sized by
+        duration (longer class = taller block).
+      </p>
+    </section>
+
+    <section class="history-card">
+      <div class="history-head">
+        <h2>History</h2>
+        <button id="clearAll" class="link-btn">Clear all</button>
+      </div>
+      <ul id="historyList"></ul>
+    </section>
+  </aside>
+
+  <main class="main">
+    <div class="toolbar">
+      <button id="prevBtn" class="nav-btn" title="Previous month">&lsaquo;</button>
+      <h2 id="monthTitle"></h2>
+      <button id="nextBtn" class="nav-btn" title="Next month">&rsaquo;</button>
+      <button id="todayBtn" class="btn">Today</button>
+    </div>
+
+    <div class="weekdays" id="weekdays"></div>
+    <div class="calendar" id="calendar"></div>
+
+    <section class="conflicts-card">
+      <h2>Conflicts</h2>
+      <div id="semesterCredit" class="semester-credit"></div>
+      <div id="conflictsList"></div>
+    </section>
+  </main>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var PALETTE = [
+    "#4e79a7", "#f28e2b", "#e15759", "#76b7b2", "#59a14f", "#edc948",
+    "#b07aa1", "#ff9da7", "#9c755f", "#bab0ac", "#6c5b7b", "#c55a11"
+  ];
+  var STORE_KEY = "enroll_calendar_entries";
+
+  var cal = document.getElementById("calendar");
+  var historyList = document.getElementById("historyList");
+  var conflictsList = document.getElementById("conflictsList");
+  var semesterCreditEl = document.getElementById("semesterCredit");
+  var monthTitle = document.getElementById("monthTitle");
+  var statusEl = document.getElementById("status");
+  var inputText = document.getElementById("inputText");
+  var addBtn = document.getElementById("addBtn");
+  var clearAllBtn = document.getElementById("clearAll");
+  var prevBtn = document.getElementById("prevBtn");
+  var nextBtn = document.getElementById("nextBtn");
+  var todayBtn = document.getElementById("todayBtn");
+
+  var entries = load();
+  var viewDate = currentMonthOfFirst();
+
+  /* ---------- utilities ---------- */
+
+  function uid() {
+    if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+    return "e" + Date.now() + "-" + Math.floor(Math.random() * 1e9);
+  }
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  }
+
+  function load() {
+    try {
+      var raw = localStorage.getItem(STORE_KEY);
+      if (!raw) return [];
+      var arr = JSON.parse(raw);
+      return arr.map(function (e) {
+        return {
+          id: e.id, section: e.section, component: e.component, topic: e.topic,
+          days: e.days, dayStr: e.dayStr, timeStr: e.timeStr, room: e.room,
+          instructor: e.instructor, startMin: e.startMin, endMin: e.endMin,
+          start: new Date(e.start), end: new Date(e.end), course: e.course || null,
+          batchId: e.batchId || e.id || null
+        };
+      });
+    } catch (e) { return []; }
+  }
+
+  function save() {
+    var data = entries.map(function (e) {
+      return {
+        id: e.id, section: e.section, component: e.component, topic: e.topic,
+        days: e.days, dayStr: e.dayStr, timeStr: e.timeStr, room: e.room,
+        instructor: e.instructor, startMin: e.startMin, endMin: e.endMin,
+        start: e.start.getTime(), end: e.end.getTime(), course: e.course || null,
+        batchId: e.batchId || e.id
+      };
+    });
+    try { localStorage.setItem(STORE_KEY, JSON.stringify(data)); } catch (e) {}
+  }
+
+  function parseDate(s) {
+    var m = String(s).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!m) return null;
+    return new Date(+m[3], +m[2] - 1, +m[1]);
+  }
+
+  function parseTime(t) {
+    var m = String(t).trim().match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+    if (!m) return null;
+    var h = +m[1], min = +m[2];
+    var ap = (m[3] || "").toUpperCase();
+    if (ap === "PM" && h < 12) h += 12;
+    if (ap === "AM" && h === 12) h = 0;
+    return h * 60 + min;
+  }
+
+  var DAY_CODES = { M: 1, T: 2, W: 3, F: 5 };
+
+  function parseDays(str) {
+    var out = [];
+    var s = String(str);
+    while (s.length) {
+      if (s.indexOf("Th") === 0) { out.push(4); s = s.slice(2); }
+      else if (s.indexOf("Sa") === 0) { out.push(6); s = s.slice(2); }
+      else if (s.indexOf("Su") === 0) { out.push(0); s = s.slice(2); }
+      else if (DAY_CODES[s[0]] !== undefined) { out.push(DAY_CODES[s[0]]); s = s.slice(1); }
+      else break;
+    }
+    return out;
+  }
+
+  function fmtTime(m) {
+    if (m == null) return "";
+    var h = Math.floor(m / 60), mm = m % 60;
+    var ap = h >= 12 ? "PM" : "AM";
+    var hh = h % 12; if (hh === 0) hh = 12;
+    return hh + ":" + ("0" + mm).slice(-2) + ap;
+  }
+
+  function fmtDate(d) {
+    return ("0" + d.getDate()).slice(-2) + "/" + ("0" + (d.getMonth() + 1)).slice(-2) + "/" + d.getFullYear();
+  }
+
+  function dateKey(d) {
+    return d.getFullYear() + "-" + d.getMonth() + "-" + d.getDate();
+  }
+
+  /* ---------- parsing input ---------- */
+
+  var SECTION_RE = /^[\w./-]+-[\w./-]+(\s*\(\d+\))?$/;
+  var TIME_ONLY_RE = /^\d{1,2}:\d{2}\s*[APap]M\s*$/;
+  var RANGE_RE = /^\d{1,2}\/\d{1,2}\/\d{4}\s*-\s*\d{1,2}\/\d{1,2}\/\d{4}$/;
+  var DAYS_HEADER_RE = /^days\s+start\s+end\s+room\s+instructor\s+dates$/i;
+  var COURSE_TITLE_RE = /^([A-Z]{2,6})\s*(\d{4})\s*-\s*\((\d+(?:\.\d+)?)\)/;
+  var UNITS_NUM_RE = /^(\d+(?:\.\d+)?)$/;
+
+  function detectCourse(lines) {
+    var end = lines.length;
+    for (var i = 0; i < lines.length; i++) {
+      if (DAYS_HEADER_RE.test(lines[i]) || /^section\s+component\s+topic/i.test(lines[i])) {
+        end = i;
+        break;
+      }
+    }
+    var code = null, name = "", credits = null;
+    for (var j = 0; j < end; j++) {
+      var m = lines[j].match(COURSE_TITLE_RE);
+      if (m) {
+        code = m[1] + " " + m[2];
+        name = lines[j].slice(lines[j].indexOf(")") + 1).trim();
+        credits = parseFloat(m[3]);
+        break;
+      }
+    }
+    if (credits == null) {
+      for (var k = 0; k < end - 2; k++) {
+        if (/^units$/i.test(lines[k]) && /^units$/i.test(lines[k + 1]) && UNITS_NUM_RE.test(lines[k + 2])) {
+          credits = parseFloat(lines[k + 2]);
+          break;
+        }
+      }
+    }
+    return code ? { code: code, name: name, credits: credits } : null;
+  }
+
+  function lastSectionLabel(buf) {
+    for (var i = buf.length - 1; i >= 0; i--) {
+      if (SECTION_RE.test(buf[i])) return buf[i];
+    }
+    return "";
+  }
+
+  function parseBlocks(text) {
+    var lines = text.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(function (l) { return l.length; });
+    if (lines.length && /section/i.test(lines[0])) lines.shift();
+    var course = detectCourse(lines);
+    var blocks = [];
+    var buf = [];
+    var currentSection = "";
+    for (var i = 0; i < lines.length; i++) {
+      var line = lines[i];
+      if (RANGE_RE.test(line)) {
+        var b;
+        if (buf.length >= 5 && TIME_ONLY_RE.test(buf[buf.length - 3])) {
+          // Section Details format: Days, Start, End, Room, Instructor, Dates
+          var sec = currentSection || lastSectionLabel(buf);
+          b = {
+            section: sec, component: "", topic: sec, course: course,
+            daysTime: buf[buf.length - 5] + " " + buf[buf.length - 4] + " - " + buf[buf.length - 3],
+            room: buf[buf.length - 2], instructor: buf[buf.length - 1], range: line
+          };
+        } else {
+          // Original format: [Section, Component,] Topic, Days & Times, Room, Instructor, Dates
+          var o = { section: "", component: "", topic: "", daysTime: "", room: "", instructor: "", range: line, course: course };
+          if (buf.length >= 4) {
+            o.instructor = buf[buf.length - 1];
+            o.room = buf[buf.length - 2];
+            o.daysTime = buf[buf.length - 3];
+            o.topic = buf[buf.length - 4];
+            var rest = buf.slice(0, buf.length - 4);
+            if (rest.length >= 2) { o.component = rest[rest.length - 1]; o.section = rest[rest.length - 2]; }
+            else if (rest.length === 1) { o.section = rest[0]; }
+          }
+          b = o;
+        }
+        blocks.push(b);
+        buf = [];
+      } else if (DAYS_HEADER_RE.test(line)) {
+        var lbl = lastSectionLabel(buf);
+        if (lbl) currentSection = lbl;
+        buf = [];
+      } else {
+        buf.push(line);
+      }
+    }
+    return blocks;
+  }
+
+  function blockToEntry(b, id) {
+    var tokens = b.daysTime.split(/\s+/);
+    var days = [];
+    var idx = 0;
+    while (idx < tokens.length) {
+      var d = parseDays(tokens[idx]);
+      if (d.length) { days = days.concat(d); idx++; }
+      else break;
+    }
+    var timeStr = idx > 0 ? tokens.slice(idx).join(" ") : b.daysTime;
+    var tm = timeStr.match(/(\d{1,2}:\d{2}\s*[APap]M)\s*-\s*(\d{1,2}:\d{2}\s*[APap]M)/);
+    var startMin = tm ? parseTime(tm[1]) : null;
+    var endMin = tm ? parseTime(tm[2]) : null;
+
+    var parts = b.range.split("-");
+    var start = parseDate(parts[0]);
+    var end = parseDate((parts[1] || parts[0]).trim());
+    if (start && end && start > end) { var tmp = start; start = end; end = tmp; }
+
+    return {
+      id: id, section: b.section, component: b.component, topic: b.topic,
+      days: days, dayStr: tokens.slice(0, idx).join(" "), timeStr: timeStr,
+      room: b.room, instructor: b.instructor, startMin: startMin, endMin: endMin,
+      start: start, end: end, course: b.course || null
+    };
+  }
+
+  function validEntry(e) {
+    return e && e.start && e.end && e.startMin != null && e.endMin != null && e.days.length > 0;
+  }
+
+  /* ---------- scheduling ---------- */
+
+  function occurrences(e) {
+    var out = [];
+    var cur = new Date(e.start);
+    while (cur <= e.end) {
+      if (e.days.indexOf(cur.getDay()) !== -1) out.push(new Date(cur));
+      cur.setDate(cur.getDate() + 1);
+    }
+    return out;
+  }
+
+  function computeConflicts() {
+    var map = {};
+    entries.forEach(function (e) {
+      occurrences(e).forEach(function (o) {
+        var k = dateKey(o);
+        (map[k] = map[k] || []).push({ e: e, o: o });
+      });
+    });
+    var out = [];
+    for (var k in map) {
+      var list = map[k];
+      for (var i = 0; i < list.length; i++) {
+        for (var j = i + 1; j < list.length; j++) {
+          var a = list[i], b = list[j];
+          if (a.e.id === b.e.id) continue;
+          if (a.e.startMin < b.e.endMin && b.e.startMin < a.e.endMin) {
+            out.push({
+              a: a.e, b: b.e, date: new Date(a.o),
+              overlapStart: Math.max(a.e.startMin, b.e.startMin),
+              overlapEnd: Math.min(a.e.endMin, b.e.endMin)
+            });
+          }
+        }
+      }
+    }
+    return out;
+  }
+
+  /* ---------- rendering ---------- */
+
+  function colorOf(entry) {
+    return PALETTE[entries.indexOf(entry) % PALETTE.length];
+  }
+
+  function courseLabel(e) {
+    return (e.course && e.course.code ? e.course.code + " " : "") + (e.topic || "");
+  }
+
+  function chipHeight(durMin) {
+    if (!durMin || durMin <= 0) durMin = 50;
+    var h = Math.round(16 + durMin * 0.28);
+    return Math.max(18, Math.min(h, 72));
+  }
+
+  function renderWeekdays() {
+    var names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+    var el = document.getElementById("weekdays");
+    el.innerHTML = "";
+    names.forEach(function (n) {
+      var d = document.createElement("div");
+      d.textContent = n;
+      el.appendChild(d);
+    });
+  }
+
+  function renderCalendar() {
+    var y = viewDate.getFullYear(), m = viewDate.getMonth();
+    monthTitle.textContent = new Date(y, m, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+
+    var occMap = {};
+    entries.forEach(function (e) {
+      occurrences(e).forEach(function (o) {
+        var k = dateKey(o);
+        (occMap[k] = occMap[k] || []).push(e);
+      });
+    });
+
+    var conflicts = computeConflicts();
+    var conflictDays = {};
+    conflicts.forEach(function (c) { conflictDays[dateKey(c.date)] = true; });
+
+    var first = new Date(y, m, 1).getDay();
+    var daysInMonth = new Date(y, m + 1, 0).getDate();
+    var today = new Date();
+    cal.innerHTML = "";
+
+    for (var i = 0; i < first + daysInMonth; i++) {
+      var day = i - first + 1;
+      var cell = document.createElement("div");
+      cell.className = "day-cell";
+      if (day < 1) { cell.classList.add("empty"); cal.appendChild(cell); continue; }
+
+      var k = y + "-" + m + "-" + day;
+      var num = document.createElement("div");
+      num.className = "day-num";
+      num.textContent = day;
+      cell.appendChild(num);
+
+      var evs = occMap[k] || [];
+      evs.sort(function (a, b) { return a.startMin - b.startMin; });
+      evs.forEach(function (e) {
+        var dur = (e.endMin || 0) - (e.startMin || 0);
+        var chip = document.createElement("div");
+        chip.className = "chip";
+        chip.style.background = colorOf(e);
+        chip.style.height = chipHeight(dur) + "px";
+        chip.title = e.topic + " \u00b7 " + e.dayStr + " " + e.timeStr + " \u00b7 " + e.room +
+          " (" + Math.round(dur) + " min)";
+        chip.textContent = fmtTime(e.startMin) + " " + e.topic;
+        cell.appendChild(chip);
+      });
+
+      if (conflictDays[k]) {
+        cell.classList.add("has-conflict");
+        var dot = document.createElement("div");
+        dot.className = "conflict-dot";
+        dot.title = "Time conflict on this day";
+        cell.appendChild(dot);
+      }
+      if (y === today.getFullYear() && m === today.getMonth() && day === today.getDate()) {
+        cell.classList.add("today");
+      }
+      cal.appendChild(cell);
+    }
+  }
+
+  function batchGrouping() {
+    var groups = [];
+    var map = {};
+    entries.forEach(function (e) {
+      var key = e.batchId || e.id;
+      var g = map[key];
+      if (!g) { g = map[key] = { id: key, sessions: [] }; groups.push(g); }
+      g.sessions.push(e);
+    });
+    groups.forEach(function (g) {
+      g.sessions.sort(function (a, b) { return a.startMin - b.startMin || a.start - b.start; });
+      g.course = g.sessions[0].course;
+      g.first = g.sessions[0].start;
+      g.last = g.sessions[0].end;
+      g.sessions.forEach(function (e) {
+        if (e.start < g.first) g.first = e.start;
+        if (e.end > g.last) g.last = e.end;
+      });
+    });
+    groups.sort(function (a, b) { return a.first - b.first; });
+    return groups;
+  }
+
+  function renderHistory() {
+    historyList.innerHTML = "";
+    var groups = batchGrouping();
+    if (!groups.length) {
+      var none = document.createElement("li");
+      none.className = "none";
+      none.textContent = "No entries yet.";
+      historyList.appendChild(none);
+      return;
+    }
+
+    groups.forEach(function (g) {
+      var li = document.createElement("li");
+      li.className = "hist-item batch";
+
+      var head = document.createElement("div");
+      head.className = "hist-head";
+
+      var sw = document.createElement("span");
+      sw.className = "swatch";
+      sw.style.background = colorOf(g.sessions[0]);
+
+      var info = document.createElement("div");
+      info.className = "hist-info";
+      var t = document.createElement("div");
+      t.className = "hist-topic";
+      var title = (g.course && g.course.code ? g.course.code + " " : "") + g.sessions[0].topic;
+      t.textContent = title;
+      var meta = document.createElement("div");
+      meta.className = "hist-meta";
+      meta.textContent = (g.course && g.course.name ? g.course.name + " \u00b7 " : "") +
+        fmtDate(g.first) + " \u2013 " + fmtDate(g.last) + " \u00b7 " + g.sessions.length + " session" +
+        (g.sessions.length > 1 ? "s" : "");
+      info.appendChild(t);
+      info.appendChild(meta);
+
+      var del = document.createElement("button");
+      del.className = "del";
+      del.title = "Delete this input";
+      del.textContent = "\u00d7";
+      del.onclick = function () {
+        entries = entries.filter(function (x) { return (x.batchId || x.id) !== g.id; });
+        save();
+        render();
+      };
+
+      head.appendChild(sw);
+      head.appendChild(info);
+      head.appendChild(del);
+      li.appendChild(head);
+
+      if (g.sessions.length > 1) {
+        var sub = document.createElement("ul");
+        sub.className = "hist-sublist";
+        g.sessions.forEach(function (e) {
+          var subli = document.createElement("li");
+          subli.className = "hist-item sub";
+          var ssw = document.createElement("span");
+          ssw.className = "swatch";
+          ssw.style.background = colorOf(e);
+          var sinfo = document.createElement("div");
+          sinfo.className = "hist-info";
+          var st = document.createElement("div");
+          st.className = "hist-topic";
+          st.textContent = e.topic;
+          var smeta = document.createElement("div");
+          smeta.className = "hist-meta";
+          smeta.textContent = e.dayStr + " " + e.timeStr + " \u00b7 " + e.room +
+            " \u00b7 " + fmtDate(e.start) + " \u2013 " + fmtDate(e.end);
+          sinfo.appendChild(st);
+          sinfo.appendChild(smeta);
+          var sdel = document.createElement("button");
+          sdel.className = "del";
+          sdel.title = "Delete session";
+          sdel.textContent = "\u00d7";
+          sdel.onclick = function () {
+            entries = entries.filter(function (x) { return x.id !== e.id; });
+            save();
+            render();
+          };
+          subli.appendChild(ssw);
+          subli.appendChild(sinfo);
+          subli.appendChild(sdel);
+          sub.appendChild(subli);
+        });
+        li.appendChild(sub);
+      }
+
+      historyList.appendChild(li);
+    });
+  }
+
+  function renderConflicts() {
+    var groups = {};
+    computeConflicts().forEach(function (c) {
+      var key = [c.a.id, c.b.id].sort().join("|");
+      var g = groups[key];
+      if (!g) { g = groups[key] = { a: c.a, b: c.b, dates: [], start: null, end: null }; }
+      g.dates.push(c.date);
+      if (g.start == null) { g.start = c.overlapStart; g.end = c.overlapEnd; }
+    });
+
+    conflictsList.innerHTML = "";
+    var keys = Object.keys(groups);
+    if (!keys.length) {
+      var p = document.createElement("p");
+      p.className = "none";
+      p.textContent = "No conflicts. \u2705";
+      conflictsList.appendChild(p);
+      return;
+    }
+    keys.forEach(function (key) {
+      var g = groups[key];
+      var dates = {};
+      g.dates.forEach(function (d) { dates[fmtDate(d)] = true; });
+      var div = document.createElement("div");
+      div.className = "conflict";
+      div.innerHTML = "<b>" + esc(courseLabel(g.a)) + "</b> vs <b>" + esc(courseLabel(g.b)) + "</b> \u2014 " +
+        fmtTime(g.start) + "\u2013" + fmtTime(g.end) + " on " + esc(Object.keys(dates).join(", "));
+      conflictsList.appendChild(div);
+    });
+  }
+
+  function semesterCredits() {
+    var seen = {};
+    var total = 0;
+    var breakdown = [];
+    entries.forEach(function (e) {
+      if (e.course && e.course.code && e.course.credits != null && !seen[e.course.code]) {
+        seen[e.course.code] = true;
+        total += e.course.credits;
+        breakdown.push({ code: e.course.code, credits: e.course.credits });
+      }
+    });
+    return { total: total, breakdown: breakdown };
+  }
+
+  function renderSemesterCredit() {
+    var sc = semesterCredits();
+    if (!sc.breakdown.length) {
+      semesterCreditEl.innerHTML = "";
+      return;
+    }
+    var parts = sc.breakdown.map(function (b) {
+      return b.code + " (" + b.credits + ")";
+    });
+    semesterCreditEl.innerHTML =
+      "Semester Credits: <span class=\"credit-value\">" + sc.total + "</span>" +
+      (parts.length ? " &middot; " + esc(parts.join(" + ")) : "");
+  }
+
+  function render() {
+    renderCalendar();
+    renderHistory();
+    renderConflicts();
+    renderSemesterCredit();
+  }
+
+  /* ---------- actions ---------- */
+
+  function currentMonthOfFirst() {
+    if (entries.length) {
+      var first = entries.slice().sort(function (a, b) { return a.start - b.start; })[0];
+      return new Date(first.start.getFullYear(), first.start.getMonth(), 1);
+    }
+    var t = new Date();
+    return new Date(t.getFullYear(), t.getMonth(), 1);
+  }
+
+  function setStatus(msg, isError) {
+    statusEl.textContent = msg;
+    statusEl.className = isError ? "error" : "";
+  }
+
+  addBtn.onclick = function () {
+    var blocks = parseBlocks(inputText.value);
+    var added = 0;
+    var batchId = uid();
+    blocks.forEach(function (b) {
+      var e = blockToEntry(b, uid());
+      if (!validEntry(e)) return;
+      var dup = entries.some(function (x) {
+        return x.topic === e.topic &&
+          x.start.getTime() === e.start.getTime() &&
+          x.end.getTime() === e.end.getTime() &&
+          x.startMin === e.startMin;
+      });
+      if (dup) return;
+      e.batchId = batchId;
+      entries.push(e);
+      added++;
+    });
+    save();
+    inputText.value = "";
+    if (added) {
+      viewDate = currentMonthOfFirst();
+      setStatus("Added " + added + " entr" + (added > 1 ? "ies." : "y."));
+    } else {
+      setStatus("Nothing new to add \u2014 check the format.", blocks.length > 0);
+    }
+    render();
+  };
+
+  clearAllBtn.onclick = function () {
+    if (!entries.length) return;
+    if (confirm("Delete all entries?")) {
+      entries = [];
+      save();
+      viewDate = currentMonthOfFirst();
+      render();
+    }
+  };
+
+  prevBtn.onclick = function () { viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1); render(); };
+  nextBtn.onclick = function () { viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1); render(); };
+  todayBtn.onclick = function () { var t = new Date(); viewDate = new Date(t.getFullYear(), t.getMonth(), 1); render(); };
+
+  renderWeekdays();
+  render();
+})();
+</script>
+</body>
+</html>
