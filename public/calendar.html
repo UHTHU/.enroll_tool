@@ -535,7 +535,7 @@
       <ul id="historyList"></ul>
     </section>
 
-    <div id="appVersion" class="app-version" title="Deployed app version">v6</div>
+    <div id="appVersion" class="app-version" title="Deployed app version">v8</div>
   </aside>
 
   <main class="main">
@@ -612,7 +612,7 @@
   var PLANNER_LOCK_KEY = "enroll_planner_locks";
   var PLANNER_MODE_KEY = "enroll_planner_mode";
   var PLANNER_HOLIDAY_KEY = "enroll_planner_holidays";
-  var APP_VERSION = "v6";
+  var APP_VERSION = "v8";
   var planModeEl = document.getElementById("planMode");
   var holidayInput = document.getElementById("holidayInput");
   var holidayAddBtn = document.getElementById("holidayAddBtn");
@@ -1308,6 +1308,25 @@
         continue;
       }
       if (!curSection) continue;
+
+      /* Multi-line format: each cell on its own line, repeating
+         Day / Start / End / Room / Instructor / Dates */
+      var daym = ln.match(/^(Mo|Tu|We|Th|Fr|Sa|Su|Mon|Tue|Wed|Thu|Fri|Sat|Sun)$/);
+      if (daym && i + 5 < lines.length &&
+          /^\d{1,2}:\d{2}(?:AM|PM)$/i.test(lines[i + 1]) &&
+          /^\d{1,2}:\d{2}(?:AM|PM)$/i.test(lines[i + 2]) &&
+          RANGE_RE.test(lines[i + 5])) {
+        var rparts = lines[i + 5].split("-");
+        curSection.sessions.push({
+          dayCode: DAY_MAP[daym[1]], dayStr: daym[1],
+          startMin: parseTime(lines[i + 1]), endMin: parseTime(lines[i + 2]),
+          room: lines[i + 3], instructor: lines[i + 4],
+          startDate: parseDate(rparts[0]), endDate: parseDate(rparts[1].trim())
+        });
+        i += 5;
+        continue;
+      }
+
       var sr = ln.match(SESSION_ROW_RE);
       var st = sr ? null : ln.match(SESSION_ROW_TAB_RE);
       var sp = sr || st ? null : ln.match(SESSION_ROW_SPACE_RE);
@@ -1451,7 +1470,9 @@
           var ok = true;
           for (var p = 0; p < pos; p++) {
             var pci = order[p];
-            if (sectionsConflict(stagedCourses[pci].sections[cur[stagedCourses[pci].code]], c.sections[si])) {
+            var pcode = stagedCourses[pci].code;
+            if (cur[pcode] == null) continue;
+            if (sectionsConflict(stagedCourses[pci].sections[cur[pcode]], c.sections[si])) {
               ok = false;
               break;
             }
@@ -1513,7 +1534,9 @@
           for (var b = 0; b < order.length; b++) {
             if (b === a) continue;
             var bc = stagedCourses[order[b]];
-            var bSec = bc.sections[cur[bc.code]];
+            var bcode = bc.code;
+            if (cur[bcode] == null) continue;
+            var bSec = bc.sections[cur[bcode]];
             if (sectionsConflict(jSec, bSec)) deltaC++;
             if (sectionsConflict(aSec, bSec)) deltaC--;
           }
