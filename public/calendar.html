@@ -394,6 +394,14 @@
   .plan-msg { font-size: 12px; margin-top: 10px; line-height: 1.5; }
   .plan-msg.ok { color: #7fd98b; }
   .plan-msg.warn { color: #fbbf24; }
+  .plan-group {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #9aa3b5;
+    margin: 10px 0 6px;
+  }
   .plan-assign { font-size: 12px; color: #c9d0e0; margin-top: 8px; line-height: 1.6; }
   #applyPlanBtn { margin-top: 8px; }
   .apply-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
@@ -535,7 +543,7 @@
       <ul id="historyList"></ul>
     </section>
 
-    <div id="appVersion" class="app-version" title="Deployed app version">v8</div>
+    <div id="appVersion" class="app-version" title="Deployed app version">v9</div>
   </aside>
 
   <main class="main">
@@ -612,7 +620,7 @@
   var PLANNER_LOCK_KEY = "enroll_planner_locks";
   var PLANNER_MODE_KEY = "enroll_planner_mode";
   var PLANNER_HOLIDAY_KEY = "enroll_planner_holidays";
-  var APP_VERSION = "v8";
+  var APP_VERSION = "v9";
   var planModeEl = document.getElementById("planMode");
   var holidayInput = document.getElementById("holidayInput");
   var holidayAddBtn = document.getElementById("holidayAddBtn");
@@ -1279,6 +1287,8 @@
 
   function parseCoursePage(text) {
     var lines = text.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(function (l) { return l.length; });
+    var semM = text.match(/Sem(?:ester)?\s+([12])\b/i);
+    var pageSem = semM ? +semM[1] : null;
     var courses = [];
     var cur = null;
     var curSection = null;
@@ -1292,7 +1302,7 @@
       }
       var cm = ln.match(COURSE_CODE_RE);
       if (cm) {
-        cur = { code: cm[1] + " " + cm[2], units: pendingUnits, name: cm[3] || "", sections: [] };
+        cur = { code: cm[1] + " " + cm[2], units: pendingUnits, name: cm[3] || "", sem: pageSem, key: "", sections: [] };
         pendingUnits = null;
         courses.push(cur);
         curSection = null;
@@ -1350,7 +1360,17 @@
         });
       }
     }
-    return courses.filter(function (c) { return c.sections.length; });
+    return courses.filter(function (c) { return c.sections.length; }).map(function (c) {
+      if (c.sem == null) {
+        var d = null;
+        for (var s = 0; s < c.sections.length && !d; s++) {
+          if (c.sections[s].sessions.length) d = c.sections[s].sessions[0].startDate;
+        }
+        c.sem = d && d.getMonth() <= 4 ? 2 : 1;
+      }
+      c.key = c.code + "|" + c.sem;
+      return c;
+    });
   }
 
   function sessionConflict(a, b) {
@@ -1423,7 +1443,7 @@
     if (planMode === "standard") return 0;
     var hol = 0, loads = [0, 0, 0, 0, 0, 0, 0];
     stagedCourses.forEach(function (c) {
-      var si = assign[c.code];
+      var si = assign[c.key];
       if (si == null) return;
       var sec = c.sections[si];
       hol += sec._holidayMin;
@@ -1439,8 +1459,8 @@
     var order = [];
     for (var i = 0; i < n; i++) order.push(i);
     order.sort(function (a, b) {
-      var la = locks[stagedCourses[a].code] != null ? 0 : 1;
-      var lb = locks[stagedCourses[b].code] != null ? 0 : 1;
+      var la = locks[stagedCourses[a].key] != null ? 0 : 1;
+      var lb = locks[stagedCourses[b].key] != null ? 0 : 1;
       if (la !== lb) return la - lb;
       return stagedCourses[a].sections.length - stagedCourses[b].sections.length;
     });
@@ -1459,7 +1479,7 @@
         }
         var ci = order[pos];
         var c = stagedCourses[ci];
-        var opts = locks[c.code] != null ? [locks[c.code]] : c.sections.map(function (_, j) { return j; });
+        var opts = locks[c.key] != null ? [locks[c.key]] : c.sections.map(function (_, j) { return j; });
         opts.sort(function (a, b) {
           var ka = planMode === "holidays" ? c.sections[a]._holidayMin : c.sections[a]._totalMin;
           var kb = planMode === "holidays" ? c.sections[b]._holidayMin : c.sections[b]._totalMin;
@@ -1470,17 +1490,17 @@
           var ok = true;
           for (var p = 0; p < pos; p++) {
             var pci = order[p];
-            var pcode = stagedCourses[pci].code;
-            if (cur[pcode] == null) continue;
-            if (sectionsConflict(stagedCourses[pci].sections[cur[pcode]], c.sections[si])) {
+            var pkey = stagedCourses[pci].key;
+            if (cur[pkey] == null) continue;
+            if (sectionsConflict(stagedCourses[pci].sections[cur[pkey]], c.sections[si])) {
               ok = false;
               break;
             }
           }
           if (!ok) continue;
-          cur[c.code] = si;
+          cur[c.key] = si;
           dfs(pos + 1);
-          delete cur[c.code];
+          delete cur[c.key];
           if (nodes > BUDGET) return;
         }
       }
@@ -1494,27 +1514,27 @@
     var conflicts = 0, holidayTotal = 0;
     order.forEach(function (ci) {
       var c = stagedCourses[ci];
-      var opts = locks[c.code] != null ? [locks[c.code]] : c.sections.map(function (_, j) { return j; });
+      var opts = locks[c.key] != null ? [locks[c.key]] : c.sections.map(function (_, j) { return j; });
       var bestSi = opts[0], bestScore = Infinity;
       opts.forEach(function (si) {
         var sec = c.sections[si];
         var addC = 0;
         order.forEach(function (pci) {
-          if (pci === ci || cur[stagedCourses[pci].code] == null) return;
-          if (sectionsConflict(stagedCourses[pci].sections[cur[stagedCourses[pci].code]], sec)) addC++;
+          if (pci === ci || cur[stagedCourses[pci].key] == null) return;
+          if (sectionsConflict(stagedCourses[pci].sections[cur[stagedCourses[pci].key]], sec)) addC++;
         });
         var tLoads = loads.slice();
         for (var d = 0; d < 7; d++) tLoads[d] += sec._minByDay[d];
         var sc = scoreForMode(conflicts + addC, holidayTotal + sec._holidayMin, tLoads);
         if (sc < bestScore) { bestScore = sc; bestSi = si; }
       });
-      cur[c.code] = bestSi;
+      cur[c.key] = bestSi;
       var picked = c.sections[bestSi];
       for (var d2 = 0; d2 < 7; d2++) loads[d2] += picked._minByDay[d2];
       holidayTotal += picked._holidayMin;
       order.forEach(function (pci) {
-        if (pci === ci || cur[stagedCourses[pci].code] == null) return;
-        if (sectionsConflict(stagedCourses[pci].sections[cur[stagedCourses[pci].code]], picked)) conflicts++;
+        if (pci === ci || cur[stagedCourses[pci].key] == null) return;
+        if (sectionsConflict(stagedCourses[pci].sections[cur[stagedCourses[pci].key]], picked)) conflicts++;
       });
     });
 
@@ -1524,9 +1544,9 @@
       improved = false;
       for (var a = 0; a < order.length; a++) {
         var ci = order[a];
-        if (locks[stagedCourses[ci].code] != null) continue;
+        if (locks[stagedCourses[ci].key] != null) continue;
         var c = stagedCourses[ci];
-        var curSi = cur[c.code];
+        var curSi = cur[c.key];
         for (var j = 0; j < c.sections.length; j++) {
           if (j === curSi) continue;
           var aSec = c.sections[curSi], jSec = c.sections[j];
@@ -1534,9 +1554,9 @@
           for (var b = 0; b < order.length; b++) {
             if (b === a) continue;
             var bc = stagedCourses[order[b]];
-            var bcode = bc.code;
-            if (cur[bcode] == null) continue;
-            var bSec = bc.sections[cur[bcode]];
+            var bkey = bc.key;
+            if (cur[bkey] == null) continue;
+            var bSec = bc.sections[cur[bkey]];
             if (sectionsConflict(jSec, bSec)) deltaC++;
             if (sectionsConflict(aSec, bSec)) deltaC--;
           }
@@ -1546,7 +1566,7 @@
           var nHol = holidayTotal + (jSec._holidayMin - aSec._holidayMin);
           var nScore = scoreForMode(nConf, nHol, nLoads);
           if (nScore < currentScore) {
-            cur[c.code] = j;
+            cur[c.key] = j;
             conflicts = nConf; holidayTotal = nHol; loads = nLoads;
             currentScore = nScore;
             improved = true;
@@ -1565,22 +1585,22 @@
   }
 
   function planStats(assign) {
-    var loads = [0, 0, 0, 0, 0, 0, 0];
-    var total = 0;
+    var perSem = { 1: { loads: [0, 0, 0, 0, 0, 0, 0], total: 0, active: 0 }, 2: { loads: [0, 0, 0, 0, 0, 0, 0], total: 0, active: 0 } };
     stagedCourses.forEach(function (c) {
-      var si = assign[c.code];
+      var si = assign[c.key];
       if (si == null) return;
       var md = c.sections[si]._minByDay;
-      for (var d = 0; d < 7; d++) { loads[d] += md[d]; total += md[d]; }
+      var box = perSem[c.sem] || perSem[1];
+      for (var d = 0; d < 7; d++) { box.loads[d] += md[d]; box.total += md[d]; }
     });
-    var active = 0;
-    loads.forEach(function (v) { if (v > 0) active++; });
+    perSem[1].active = perSem[1].loads.filter(function (v) { return v > 0; }).length;
+    perSem[2].active = perSem[2].loads.filter(function (v) { return v > 0; }).length;
     var holDates = [], holidayTotal = 0;
     holidays.forEach(function (h) {
       var on = false;
       stagedCourses.forEach(function (c) {
         if (on) return;
-        var si = assign[c.code];
+        var si = assign[c.key];
         if (si == null) return;
         c.sections[si].sessions.forEach(function (ss) {
           if (h >= ss.startDate && h <= ss.endDate && h.getDay() === ss.dayCode) {
@@ -1591,14 +1611,16 @@
       });
       if (on) holDates.push(fmtDate(h));
     });
-    return { loads: loads, total: total, avg: active ? total / active : 0, holDates: holDates, holidayTotal: holidayTotal };
+    perSem[1].avg = perSem[1].active ? perSem[1].total / perSem[1].active : 0;
+    perSem[2].avg = perSem[2].active ? perSem[2].total / perSem[2].active : 0;
+    return { perSem: perSem, holDates: holDates, holidayTotal: holidayTotal };
   }
 
   function planToEntries(assign) {
     var out = [];
     var planBatch = "plan-" + uid();
     stagedCourses.forEach(function (c) {
-      var si = assign[c.code];
+      var si = assign[c.key];
       if (si == null) return;
       var sec = c.sections[si];
       sec.sessions.forEach(function (ss) {
@@ -1620,7 +1642,7 @@
   function savePlanner() {
     var data = stagedCourses.map(function (c) {
       return {
-        code: c.code, units: c.units, name: c.name,
+        code: c.code, units: c.units, name: c.name, sem: c.sem || 1,
         sections: c.sections.map(function (s) {
           return {
             code: s.code, num: s.num,
@@ -1646,8 +1668,9 @@
       var raw = localStorage.getItem(PLANNER_KEY);
       if (raw) {
         stagedCourses = JSON.parse(raw).map(function (c) {
-          return {
-            code: c.code, units: c.units, name: c.name || "",
+          var sem = c.sem || 1;
+          var obj = {
+            code: c.code, units: c.units, name: c.name || "", sem: sem, key: c.code + "|" + sem,
             sections: c.sections.map(function (s) {
               return {
                 code: s.code, num: s.num || "",
@@ -1661,6 +1684,7 @@
               };
             })
           };
+          return obj;
         });
       }
     } catch (e) { stagedCourses = []; }
@@ -1712,88 +1736,98 @@
       p.textContent = "No courses staged yet. Paste a course page and press \u201cStage Course\u201d.";
       stagedList.appendChild(p);
     } else {
-      stagedCourses.forEach(function (c, ci) {
-        var card = document.createElement("div");
-        card.className = "staged-course";
-        var head = document.createElement("div");
-        head.className = "staged-head";
-        var sw = document.createElement("span");
-        sw.className = "swatch";
-        sw.style.background = PALETTE[ci % PALETTE.length];
-        var info = document.createElement("div");
-        info.className = "hist-info";
-        var t = document.createElement("div");
-        t.className = "hist-topic";
-        t.textContent = c.code + (c.units != null ? " \u00b7 " + c.units + " units" : "");
-        var meta = document.createElement("div");
-        meta.className = "hist-meta";
-        meta.textContent = c.sections.length + " section" + (c.sections.length > 1 ? "s" : "");
-        info.appendChild(t); info.appendChild(meta);
-        var del = document.createElement("button");
-        del.className = "del";
-        del.title = "Remove course";
-        del.textContent = "\u00d7";
-        del.onclick = function (code) {
-          return function () {
-            stagedCourses = stagedCourses.filter(function (x) { return x.code !== code; });
-            delete locks[code];
-            planResult = null;
-            savePlanner();
-            renderPlanner();
-            renderPlanResult();
-          };
-        }(c.code);
-        head.appendChild(sw); head.appendChild(info); head.appendChild(del);
-        card.appendChild(head);
-
-        var secs = document.createElement("div");
-        secs.className = "staged-sections";
-        var chosenIdx = planResult && planResult.assign ? planResult.assign[c.code] : null;
-        c.sections.forEach(function (sec, si) {
-          var label = document.createElement("label");
-          label.className = "sec-row";
-          var cb = document.createElement("input");
-          cb.type = "checkbox";
-          cb.checked = locks[c.code] === si;
-          cb.title = "Lock this section";
-          cb.onchange = function (code, idx) {
+      var groups = { 1: [], 2: [] };
+      stagedCourses.forEach(function (c) { groups[c.sem === 2 ? 2 : 1].push(c); });
+      [1, 2].forEach(function (sem) {
+        var list = groups[sem];
+        if (!list.length) return;
+        var ghead = document.createElement("div");
+        ghead.className = "plan-group";
+        ghead.textContent = "Semester " + sem;
+        stagedList.appendChild(ghead);
+        list.forEach(function (c, ci) {
+          var card = document.createElement("div");
+          card.className = "staged-course";
+          var head = document.createElement("div");
+          head.className = "staged-head";
+          var sw = document.createElement("span");
+          sw.className = "swatch";
+          sw.style.background = PALETTE[ci % PALETTE.length];
+          var info = document.createElement("div");
+          info.className = "hist-info";
+          var t = document.createElement("div");
+          t.className = "hist-topic";
+          t.textContent = c.code + (c.units != null ? " \u00b7 " + c.units + " units" : "");
+          var meta = document.createElement("div");
+          meta.className = "hist-meta";
+          meta.textContent = c.sections.length + " section" + (c.sections.length > 1 ? "s" : "");
+          info.appendChild(t); info.appendChild(meta);
+          var del = document.createElement("button");
+          del.className = "del";
+          del.title = "Remove course";
+          del.textContent = "\u00d7";
+          del.onclick = function (key) {
             return function () {
-              if (cb.checked) locks[code] = idx; else delete locks[code];
+              stagedCourses = stagedCourses.filter(function (x) { return x.key !== key; });
+              delete locks[key];
               planResult = null;
               savePlanner();
               renderPlanner();
               renderPlanResult();
             };
-          }(c.code, si);
-          var codeEl = document.createElement("span");
-          codeEl.className = "sec-code";
-          codeEl.textContent = sec.code;
-          var m = document.createElement("span");
-          m.className = "sec-meta";
-          var sum = sessionSummary(sec);
-          m.title = sum;
-          m.textContent = sum;
-          label.appendChild(cb); label.appendChild(codeEl); label.appendChild(m);
-          if (locks[c.code] === si) label.classList.add("locked");
-          if (chosenIdx === si) label.classList.add("chosen");
-          if (!sec.sessions.length) label.classList.add("empty");
-          secs.appendChild(label);
+          }(c.key);
+          head.appendChild(sw); head.appendChild(info); head.appendChild(del);
+          card.appendChild(head);
+
+          var secs = document.createElement("div");
+          secs.className = "staged-sections";
+          var chosenIdx = planResult && planResult.assign ? planResult.assign[c.key] : null;
+          c.sections.forEach(function (sec, si) {
+            var label = document.createElement("label");
+            label.className = "sec-row";
+            var cb = document.createElement("input");
+            cb.type = "checkbox";
+            cb.checked = locks[c.key] === si;
+            cb.title = "Lock this section";
+            cb.onchange = function (key, idx) {
+              return function () {
+                if (cb.checked) locks[key] = idx; else delete locks[key];
+                planResult = null;
+                savePlanner();
+                renderPlanner();
+                renderPlanResult();
+              };
+            }(c.key, si);
+            var codeEl = document.createElement("span");
+            codeEl.className = "sec-code";
+            codeEl.textContent = sec.code;
+            var m = document.createElement("span");
+            m.className = "sec-meta";
+            var sum = sessionSummary(sec);
+            m.title = sum;
+            m.textContent = sum;
+            label.appendChild(cb); label.appendChild(codeEl); label.appendChild(m);
+            if (locks[c.key] === si) label.classList.add("locked");
+            if (chosenIdx === si) label.classList.add("chosen");
+            if (!sec.sessions.length) label.classList.add("empty");
+            secs.appendChild(label);
+          });
+          card.appendChild(secs);
+          stagedList.appendChild(card);
         });
-        card.appendChild(secs);
-        stagedList.appendChild(card);
       });
     }
 
     var lockList = [];
     stagedCourses.forEach(function (c) {
-      if (locks[c.code] != null) lockList.push(c);
+      if (locks[c.key] != null) lockList.push(c);
     });
     var badPairs = [];
     for (var a = 0; a < lockList.length; a++) {
       for (var b = a + 1; b < lockList.length; b++) {
-        if (sectionsConflict(lockList[a].sections[locks[lockList[a].code]], lockList[b].sections[locks[lockList[b].code]])) {
-          badPairs.push(lockList[a].code + " " + lockList[a].sections[locks[lockList[a].code]].code + " vs " +
-            lockList[b].code + " " + lockList[b].sections[locks[lockList[b].code]].code);
+        if (sectionsConflict(lockList[a].sections[locks[lockList[a].key]], lockList[b].sections[locks[lockList[b].key]])) {
+          badPairs.push(lockList[a].code + " " + lockList[a].sections[locks[lockList[a].key]].code + " vs " +
+            lockList[b].code + " " + lockList[b].sections[locks[lockList[b].key]].code);
         }
       }
     }
@@ -1811,7 +1845,7 @@
     if (!planResult || !planResult.assign || !stagedCourses.length) return;
 
     var emptyChosen = stagedCourses.filter(function (c) {
-      var si = planResult.assign[c.code];
+      var si = planResult.assign[c.key];
       return si == null || !c.sections[si].sessions.length;
     }).length;
     if (emptyChosen) {
@@ -1835,24 +1869,40 @@
         " overlap" + (planResult.conflicts > 1 ? "s" : "") + ".";
       planResultEl.appendChild(warn);
     }
-    var list = document.createElement("div");
-    list.className = "plan-assign";
-    stagedCourses.forEach(function (c) {
-      var si = planResult.assign[c.code];
-      var line = document.createElement("div");
-      line.textContent = c.code + " \u2192 " + c.sections[si].code;
-      list.appendChild(line);
+
+    var groups = { 1: [], 2: [] };
+    stagedCourses.forEach(function (c) { groups[c.sem === 2 ? 2 : 1].push(c); });
+    [1, 2].forEach(function (sem) {
+      if (!groups[sem].length) return;
+      var ghead = document.createElement("div");
+      ghead.className = "plan-group";
+      ghead.textContent = "Semester " + sem;
+      planResultEl.appendChild(ghead);
+      var list = document.createElement("div");
+      list.className = "plan-assign";
+      groups[sem].forEach(function (c) {
+        var si = planResult.assign[c.key];
+        var line = document.createElement("div");
+        line.textContent = c.code + " \u2192 " + c.sections[si].code;
+        list.appendChild(line);
+      });
+      planResultEl.appendChild(list);
     });
-    planResultEl.appendChild(list);
 
     var stats = planStats(planResult.assign);
     var days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
-    var parts = [];
-    for (var d = 0; d < 7; d++) parts.push(days[d] + " " + fmtMin(stats.loads[d]));
     var st = document.createElement("div");
     st.className = "plan-stats";
-    st.innerHTML = "<b>Weekly load:</b> " + esc(parts.join(" \u00b7 ")) +
-      "<br><b>Average:</b> " + fmtMin(Math.round(stats.avg)) + "/day";
+    var lines = [];
+    [1, 2].forEach(function (sem) {
+      var box = stats.perSem[sem];
+      if (!box || !box.total) return;
+      var parts = [];
+      for (var d = 0; d < 7; d++) parts.push(days[d] + " " + fmtMin(box.loads[d]));
+      lines.push("<b>Sem " + sem + " load:</b> " + esc(parts.join(" \u00b7 ")) +
+        "<br><b>Sem " + sem + " avg:</b> " + fmtMin(Math.round(box.avg)) + "/day");
+    });
+    st.innerHTML = lines.join("<br>");
     planResultEl.appendChild(st);
 
     if (planMode === "holidays") {
@@ -1981,14 +2031,17 @@
       total += c.sections.length;
       var idx = -1;
       for (var i = 0; i < stagedCourses.length; i++) {
-        if (stagedCourses[i].code === c.code) { idx = i; break; }
+        if (stagedCourses[i].key === c.key) { idx = i; break; }
       }
       if (idx >= 0) stagedCourses[idx] = c; else stagedCourses.push(c);
     });
     planResult = null;
     savePlanner();
     inputText.value = "";
-    setStatus("Staged " + parsed.length + " course" + (parsed.length > 1 ? "s" : "") + " (" + total + " sections).");
+    var sems = {};
+    parsed.forEach(function (c) { sems[c.sem] = true; });
+    setStatus("Staged " + parsed.length + " course" + (parsed.length > 1 ? "s" : "") + " (" + total + " sections)" +
+      " for Sem " + Object.keys(sems).sort().join(" & ") + ".");
     renderPlanner();
     renderPlanResult();
   };
