@@ -2,8 +2,10 @@
 
 A single-file course scheduling calendar that parses pasted enrollment text
 (two formats: the original Topic/Days/Instructor layout and the Section
-Details layout), renders a month view with color‑coded, duration‑sized course
-blocks, flags time conflicts, and computes semester credits.
+Details layout), renders a **daily timeline from 8:00 AM to 8:00 PM** where
+each course block is placed at its actual time slot (top = start time,
+height = duration) so gaps between classes are visible. It also flags time
+conflicts and computes semester credits. Deployed on **Cloudflare Workers**.
 
 Deployed on **Cloudflare Workers** as a static site served through a Worker.
 All data lives in browser `localStorage` — no backend required.
@@ -65,3 +67,7 @@ npm run tail
 - `not_found_handling = "none"` lets the Worker control 404 responses.
 - The calendar reads/writes its entries to `localStorage` key
   `enroll_calendar_entries` — entries do **not** sync across devices.
+- Day tiles render an 8 AM–8 PM timeline; blocks are positioned by real clock
+  time (top = start, height = duration), so empty space shows the gaps between
+  classes. Courses starting before 8 AM or ending after 8 PM are clamped to
+  the visible window with ▲/▼ markers.

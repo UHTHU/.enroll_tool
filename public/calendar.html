@@ -231,23 +231,28 @@
     grid-template-columns: repeat(7, 1fr);
     gap: 6px;
   }
+  .calendar .day-cell:not(.empty) {
+    height: 660px; /* 8am–8pm = 720 minutes */
+  }
+  .calendar.week .day-cell:not(.empty) { height: 760px; }
   .day-cell {
-    min-height: 92px;
+    min-height: 300px;
     background: var(--card-bg);
     border: 1px solid var(--border);
     border-radius: 8px;
     padding: 6px;
     position: relative;
-    overflow: visible;
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
+    overflow: hidden;
   }
   .day-cell.empty { background: transparent; border-color: transparent; }
   .day-num {
+    position: relative;
+    z-index: 3;
     font-size: 12px;
+    font-weight: 600;
     color: var(--muted);
     margin-bottom: 3px;
+    background: var(--card-bg);
   }
   .day-cell.today { outline: 2px solid var(--accent); }
   .day-cell.has-conflict { border-color: var(--danger); box-shadow: inset 0 0 0 1px var(--danger); }
@@ -259,20 +264,48 @@
     height: 10px;
     border-radius: 50%;
     background: var(--danger);
+    z-index: 4;
   }
-  .chip {
-    font-size: 11px;
-    color: #fff;
-    padding: 2px 5px;
+  .hour-line {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: #eef0f4;
+    pointer-events: none;
+  }
+  .hour-line .label {
+    position: absolute;
+    right: 4px;
+    top: 2px;
+    font-size: 9px;
+    color: #b6bcc8;
+    background: var(--card-bg);
+    padding: 0 2px;
+  }
+  .week-block {
+    position: absolute;
+    min-height: 6px;
+    background: rgba(78, 121, 167, 0.88);
     border-radius: 4px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    cursor: default;
-    box-sizing: border-box;
-    display: block;
+    border-left: 3px solid rgba(0, 0, 0, 0.25);
+    color: #fff;
+    font-size: 10px;
     line-height: 1.2;
-    flex: 0 0 auto;
+    padding: 2px 4px;
+    overflow: hidden;
+    box-sizing: border-box;
+    cursor: default;
+    z-index: 2;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.35);
+  }
+  .tl {
+    position: absolute;
+    left: 6px;
+    right: 6px;
+    top: 28px;
+    bottom: 6px;
+    overflow: hidden;
   }
 
   .conflicts-card {
@@ -313,6 +346,54 @@
     font-size: 13px;
     line-height: 1.4;
   }
+
+  .btn-row { display: flex; gap: 8px; }
+  .btn-row .btn { width: auto; margin-top: 10px; flex: 1; }
+
+  .planner-card { margin-top: 18px; }
+  .staged-course {
+    background: #2a3040;
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+  }
+  .staged-head { display: flex; align-items: center; gap: 8px; }
+  .staged-sections {
+    margin: 8px 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    max-height: 30vh;
+    overflow-y: auto;
+  }
+  .sec-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #c9d0e0;
+    padding: 4px 6px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .sec-row:hover { background: #232a3a; }
+  .sec-row input { margin: 0; accent-color: var(--accent); flex: 0 0 auto; }
+  .sec-row .sec-code { font-weight: 600; color: #fff; flex: 0 0 auto; }
+  .sec-row .sec-meta {
+    color: #9aa3b5;
+    font-size: 11px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sec-row.chosen { background: rgba(37, 99, 235, 0.25); outline: 1px solid var(--accent); }
+  .sec-row.chosen .sec-code::after { content: " \u2713"; color: #7fd98b; }
+  .sec-row.locked { outline: 1px dashed #9aa3b5; }
+  .plan-msg { font-size: 12px; margin-top: 10px; line-height: 1.5; }
+  .plan-msg.ok { color: #7fd98b; }
+  .plan-msg.warn { color: #fbbf24; }
+  .plan-assign { font-size: 12px; color: #c9d0e0; margin-top: 8px; line-height: 1.6; }
+  #applyPlanBtn { margin-top: 8px; }
 </style>
 </head>
 <body>
@@ -323,17 +404,39 @@
     <section class="input-card">
       <label for="inputText">Paste schedule text</label>
       <textarea id="inputText" spellcheck="false" placeholder="1A&#10;--&#10;037006_1B1A0 001&#10;Th 3:00PM - 4:50PM&#10;MWT1&#10;Staff&#10;03/09/2026 - 24/09/2026&#10;&#10;&#10;037006_1B1A0 002&#10;Th 3:00PM - 4:50PM&#10;MWT1&#10;Staff&#10;08/10/2026 - 08/10/2026"></textarea>
-      <button id="addBtn" class="btn">Add to Calendar</button>
+      <div class="btn-row">
+        <button id="addBtn" class="btn">Add to Calendar</button>
+        <button id="stageBtn" class="btn">Stage Course</button>
+      </div>
       <div id="status"></div>
+      <p class="hint">
+        <b>Stage Course</b> parses a pasted course page (like the ENGG 1000
+        section list) into planner sections. <b>Add to Calendar</b> handles the
+        schedule-text formats below.
+      </p>
       <p class="hint">
         Handles both formats: lines ending in a date range like
         <code>03/09/2026 - 24/09/2026</code>. Works with the original
         Topic / Days &amp; Times / Room / Instructor layout, and the
         Section Details layout (Days / Start / End / Room / Instructor / Dates).
         Paste as many entries as you like, with or without the header row.
-        In the calendar, each day's courses are sorted by time and sized by
-        duration (longer class = taller block).
+        Each day shows an <b>8 AM – 8 PM</b> timeline: blocks are placed at
+        their real clock time (top = start, height = duration), so the empty
+        space between them shows every gap. Classes outside that window are
+        clamped and marked with &blacktriangle;/&blacktriangledown;.
       </p>
+    </section>
+
+    <section class="planner-card">
+      <div class="history-head">
+        <h2>Planner</h2>
+        <button id="clearPlanBtn" class="link-btn">Clear</button>
+      </div>
+      <div id="stagedList"></div>
+      <div id="planStatus"></div>
+      <button id="findPlanBtn" class="btn">Find conflict-free schedule</button>
+      <div id="planResult"></div>
+      <button id="applyPlanBtn" class="btn" style="display:none">Show plan on calendar</button>
     </section>
 
     <section class="history-card">
@@ -350,6 +453,7 @@
       <button id="prevBtn" class="nav-btn" title="Previous month">&lsaquo;</button>
       <h2 id="monthTitle"></h2>
       <button id="nextBtn" class="nav-btn" title="Next month">&rsaquo;</button>
+      <button id="viewToggle" class="btn">Week</button>
       <button id="todayBtn" class="btn">Today</button>
     </div>
 
@@ -374,6 +478,11 @@
   ];
   var STORE_KEY = "enroll_calendar_entries";
 
+  /* Timeline window: 8:00 AM – 8:00 PM (minutes from midnight) */
+  var DAY_START_MIN = 8 * 60;    // 480
+  var DAY_END_MIN = 20 * 60;     // 1200
+  var DAY_SPAN_MIN = DAY_END_MIN - DAY_START_MIN; // 720
+
   var cal = document.getElementById("calendar");
   var historyList = document.getElementById("historyList");
   var conflictsList = document.getElementById("conflictsList");
@@ -386,9 +495,24 @@
   var prevBtn = document.getElementById("prevBtn");
   var nextBtn = document.getElementById("nextBtn");
   var todayBtn = document.getElementById("todayBtn");
+  var viewToggle = document.getElementById("viewToggle");
+  var viewMode = "month";
+  var stagedList = document.getElementById("stagedList");
+  var planStatus = document.getElementById("planStatus");
+  var planResultEl = document.getElementById("planResult");
+  var applyPlanBtn = document.getElementById("applyPlanBtn");
+  var stageBtn = document.getElementById("stageBtn");
+  var findPlanBtn = document.getElementById("findPlanBtn");
+  var clearPlanBtn = document.getElementById("clearPlanBtn");
+
+  var stagedCourses = [];
+  var locks = {};
+  var planResult = null;
+  var PLANNER_KEY = "enroll_planner_courses";
+  var PLANNER_LOCK_KEY = "enroll_planner_locks";
 
   var entries = load();
-  var viewDate = currentMonthOfFirst();
+  var viewDate = anchorToFirst();
 
   /* ---------- utilities ---------- */
 
@@ -649,13 +773,60 @@
   }
 
   function courseLabel(e) {
-    return (e.course && e.course.code ? e.course.code + " " : "") + (e.topic || "");
+    var code = e.course && e.course.code ? e.course.code : "";
+    var t = e.topic || "";
+    return (code && t.indexOf(code) !== 0 ? code + " " : "") + t;
   }
 
   function chipHeight(durMin) {
     if (!durMin || durMin <= 0) durMin = 50;
     var h = Math.round(16 + durMin * 0.28);
     return Math.max(18, Math.min(h, 72));
+  }
+
+  function fmtClock(m) {
+    var h = Math.floor(m / 60), mm = m % 60;
+    var ap = h >= 12 ? "PM" : "AM";
+    var hh = h % 12; if (hh === 0) hh = 12;
+    return hh + (mm ? ":" + ("0" + mm).slice(-2) : "") + ap;
+  }
+
+  /* Greedy column layout for overlapping blocks on a single day.
+     Returns [{ e, col, cols }] — cols = number of columns the widest
+     overlap group needs, so overlapping entries sit side by side. */
+  function layoutOverlaps(evs) {
+    var sorted = evs.slice().sort(function (a, b) {
+      return a.startMin - b.startMin || a.endMin - b.endMin;
+    });
+    var clusters = [];
+    var cur = null, curEnd = -1;
+    sorted.forEach(function (e) {
+      if (!cur || e.startMin >= curEnd) {
+        cur = [];
+        curEnd = e.endMin;
+        clusters.push(cur);
+      }
+      if (e.endMin > curEnd) curEnd = e.endMin;
+      cur.push(e);
+    });
+
+    var result = [];
+    clusters.forEach(function (cluster) {
+      var colEnds = [];
+      var placed = [];
+      cluster.forEach(function (e) {
+        var col = -1;
+        for (var c = 0; c < colEnds.length; c++) {
+          if (colEnds[c] <= e.startMin) { col = c; break; }
+        }
+        if (col === -1) { col = colEnds.length; colEnds.push(e.endMin); }
+        else { colEnds[col] = e.endMin; }
+        placed.push({ e: e, col: col });
+      });
+      var cols = Math.max(1, colEnds.length);
+      placed.forEach(function (p) { result.push({ e: p.e, col: p.col, cols: cols }); });
+    });
+    return result;
   }
 
   function renderWeekdays() {
@@ -669,10 +840,75 @@
     });
   }
 
-  function renderCalendar() {
-    var y = viewDate.getFullYear(), m = viewDate.getMonth();
-    monthTitle.textContent = new Date(y, m, 1).toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  function buildDayCell(k, label, occMap, conflictDays) {
+    var cell = document.createElement("div");
+    cell.className = "day-cell";
 
+    var num = document.createElement("div");
+    num.className = "day-num";
+    num.textContent = label;
+    cell.appendChild(num);
+
+    /* Timeline: 8 AM – 8 PM grid */
+    var tl = document.createElement("div");
+    tl.className = "tl";
+    for (var hh = DAY_START_MIN; hh <= DAY_END_MIN; hh += 60) {
+      var line = document.createElement("div");
+      line.className = "hour-line";
+      line.style.top = ((hh - DAY_START_MIN) / DAY_SPAN_MIN * 100) + "%";
+      if (hh < DAY_END_MIN) {
+        var lbl = document.createElement("span");
+        lbl.className = "label";
+        lbl.textContent = fmtClock(hh);
+        line.appendChild(lbl);
+      }
+      tl.appendChild(line);
+
+      var half = document.createElement("div");
+      half.className = "hour-line";
+      half.style.top = (((hh + 30) - DAY_START_MIN) / DAY_SPAN_MIN * 100) + "%";
+      half.style.background = "#f7f8fa";
+      tl.appendChild(half);
+    }
+
+    var evs = occMap[k] || [];
+    layoutOverlaps(evs).forEach(function (item) {
+      var e = item.e;
+      var topPct = Math.max(0, (e.startMin - DAY_START_MIN) / DAY_SPAN_MIN * 100);
+      var botPct = Math.min(100, (e.endMin - DAY_START_MIN) / DAY_SPAN_MIN * 100);
+      var hPct = Math.max(1.2, botPct - topPct);
+      var wPct = 100 / item.cols;
+      var block = document.createElement("div");
+      block.className = "week-block";
+      block.style.background = colorOf(e);
+      block.style.top = topPct + "%";
+      block.style.height = hPct + "%";
+      block.style.left = (item.col * wPct) + "%";
+      block.style.width = wPct + "%";
+      var dur = e.endMin - e.startMin;
+      block.title = e.topic + " \u00b7 " + e.dayStr + " " + e.timeStr + " \u00b7 " + e.room +
+        " (" + Math.round(dur) + " min)";
+      block.textContent = fmtClock(e.startMin) + "\u2013" + fmtClock(e.endMin) + " " + e.topic;
+      tl.appendChild(block);
+    });
+
+    cell.appendChild(tl);
+
+    if (conflictDays[k]) {
+      cell.classList.add("has-conflict");
+      var dot = document.createElement("div");
+      dot.className = "conflict-dot";
+      dot.title = "Time conflict on this day";
+      cell.appendChild(dot);
+    }
+    return cell;
+  }
+
+  function sameDay(a, b) {
+    return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  }
+
+  function collectDayData() {
     var occMap = {};
     entries.forEach(function (e) {
       occurrences(e).forEach(function (o) {
@@ -680,49 +916,59 @@
         (occMap[k] = occMap[k] || []).push(e);
       });
     });
-
     var conflicts = computeConflicts();
     var conflictDays = {};
     conflicts.forEach(function (c) { conflictDays[dateKey(c.date)] = true; });
+    return { occMap: occMap, conflictDays: conflictDays };
+  }
 
-    var first = new Date(y, m, 1).getDay();
-    var daysInMonth = new Date(y, m + 1, 0).getDate();
+  function weekLabel() {
+    var ws = startOfWeek(viewDate);
+    var we = new Date(ws); we.setDate(we.getDate() + 6);
+    return ws.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " \u2013 " +
+      we.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  function renderCalendar() {
     var today = new Date();
+    var data = collectDayData();
+    var names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     cal.innerHTML = "";
 
+    if (viewMode === "week") {
+      cal.className = "calendar week";
+      monthTitle.textContent = "Week of " + weekLabel();
+      prevBtn.title = "Previous week";
+      nextBtn.title = "Next week";
+      var ws = startOfWeek(viewDate);
+      for (var i = 0; i < 7; i++) {
+        var d = new Date(ws); d.setDate(d.getDate() + i);
+        var k = dateKey(d);
+        var cell = buildDayCell(k, names[d.getDay()] + " " + d.getDate(), data.occMap, data.conflictDays);
+        if (sameDay(d, today)) cell.classList.add("today");
+        cal.appendChild(cell);
+      }
+      return;
+    }
+
+    cal.className = "calendar";
+    monthTitle.textContent = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1)
+      .toLocaleDateString(undefined, { month: "long", year: "numeric" });
+    prevBtn.title = "Previous month";
+    nextBtn.title = "Next month";
+    var y = viewDate.getFullYear(), m = viewDate.getMonth();
+    var first = new Date(y, m, 1).getDay();
+    var daysInMonth = new Date(y, m + 1, 0).getDate();
     for (var i = 0; i < first + daysInMonth; i++) {
       var day = i - first + 1;
-      var cell = document.createElement("div");
-      cell.className = "day-cell";
-      if (day < 1) { cell.classList.add("empty"); cal.appendChild(cell); continue; }
-
-      var k = y + "-" + m + "-" + day;
-      var num = document.createElement("div");
-      num.className = "day-num";
-      num.textContent = day;
-      cell.appendChild(num);
-
-      var evs = occMap[k] || [];
-      evs.sort(function (a, b) { return a.startMin - b.startMin; });
-      evs.forEach(function (e) {
-        var dur = (e.endMin || 0) - (e.startMin || 0);
-        var chip = document.createElement("div");
-        chip.className = "chip";
-        chip.style.background = colorOf(e);
-        chip.style.height = chipHeight(dur) + "px";
-        chip.title = e.topic + " \u00b7 " + e.dayStr + " " + e.timeStr + " \u00b7 " + e.room +
-          " (" + Math.round(dur) + " min)";
-        chip.textContent = fmtTime(e.startMin) + " " + e.topic;
-        cell.appendChild(chip);
-      });
-
-      if (conflictDays[k]) {
-        cell.classList.add("has-conflict");
-        var dot = document.createElement("div");
-        dot.className = "conflict-dot";
-        dot.title = "Time conflict on this day";
-        cell.appendChild(dot);
+      if (day < 1) {
+        var ec = document.createElement("div");
+        ec.className = "day-cell empty";
+        cal.appendChild(ec);
+        continue;
       }
+      var k = y + "-" + m + "-" + day;
+      var cell = buildDayCell(k, day, data.occMap, data.conflictDays);
       if (y === today.getFullYear() && m === today.getMonth() && day === today.getDate()) {
         cell.classList.add("today");
       }
@@ -779,7 +1025,8 @@
       info.className = "hist-info";
       var t = document.createElement("div");
       t.className = "hist-topic";
-      var title = (g.course && g.course.code ? g.course.code + " " : "") + g.sessions[0].topic;
+      var raw = g.sessions[0].topic;
+      var title = (g.course && g.course.code && raw.indexOf(g.course.code) !== 0 ? g.course.code + " " : "") + raw;
       t.textContent = title;
       var meta = document.createElement("div");
       meta.className = "hist-meta";
@@ -904,6 +1151,393 @@
       (parts.length ? " &middot; " + esc(parts.join(" + ")) : "");
   }
 
+  /* ---------- planner ---------- */
+
+  var COURSE_CODE_RE = /^([A-Z]{2,6})\s*(\d{4})$/;
+  var SECTION_HEADER_RE = /^([A-Za-z0-9]+-[A-Za-z0-9]+)\s*\(\d+\)/;
+  var SESSION_ROW_RE = /^(Mo|Tu|We|Th|Fr|Sa|Su)(\d{1,2}:\d{2}(?:AM|PM))(\d{1,2}:\d{2}(?:AM|PM))(.+?)(\d{1,2}\/\d{1,2}\/\d{4}\s*-\s*\d{1,2}\/\d{1,2}\/\d{4})$/;
+  var DAY_MAP = { Mo: 1, Tu: 2, We: 3, Th: 4, Fr: 5, Sa: 6, Su: 0 };
+
+  function splitRoomInstructor(mid) {
+    if (/Staff$/.test(mid)) return { room: mid.slice(0, -5), instructor: "Staff" };
+    if (/^TBA$/.test(mid)) return { room: "TBA", instructor: "" };
+    return { room: mid, instructor: "" };
+  }
+
+  function parseCoursePage(text) {
+    var lines = text.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(function (l) { return l.length; });
+    var courses = [];
+    var cur = null;
+    var curSection = null;
+    var pendingUnits = null;
+    for (var i = 0; i < lines.length; i++) {
+      var ln = lines[i];
+      if (/^units$/i.test(ln) && i + 1 < lines.length && /^(\d+(?:\.\d+)?)$/.test(lines[i + 1])) {
+        pendingUnits = parseFloat(lines[i + 1]);
+        continue;
+      }
+      var cm = ln.match(COURSE_CODE_RE);
+      if (cm) {
+        cur = { code: cm[1] + " " + cm[2], units: pendingUnits, name: "", sections: [] };
+        pendingUnits = null;
+        courses.push(cur);
+        curSection = null;
+        continue;
+      }
+      if (!cur) continue;
+      var sh = ln.match(SECTION_HEADER_RE);
+      if (sh) {
+        curSection = { code: sh[1], num: "", sessions: [] };
+        var numM = ln.match(/\((\d+)\)/);
+        if (numM) curSection.num = numM[1];
+        cur.sections.push(curSection);
+        continue;
+      }
+      if (!curSection) continue;
+      var sr = ln.match(SESSION_ROW_RE);
+      if (sr) {
+        var mid = splitRoomInstructor(sr[4]);
+        var parts = sr[5].split("-");
+        curSection.sessions.push({
+          dayCode: DAY_MAP[sr[1]], dayStr: sr[1],
+          startMin: parseTime(sr[2]), endMin: parseTime(sr[3]),
+          room: mid.room, instructor: mid.instructor,
+          startDate: parseDate(parts[0]), endDate: parseDate(parts[1].trim())
+        });
+      }
+    }
+    return courses.filter(function (c) { return c.sections.length; });
+  }
+
+  function sessionConflict(a, b) {
+    if (a.dayCode !== b.dayCode) return false;
+    if (a.endMin <= b.startMin || b.endMin <= a.startMin) return false;
+    var s = a.startDate > b.startDate ? a.startDate : b.startDate;
+    var e = a.endDate < b.endDate ? a.endDate : b.endDate;
+    return s <= e;
+  }
+
+  function sectionsConflict(s1, s2) {
+    for (var i = 0; i < s1.sessions.length; i++) {
+      for (var j = 0; j < s2.sessions.length; j++) {
+        if (sessionConflict(s1.sessions[i], s2.sessions[j])) return true;
+      }
+    }
+    return false;
+  }
+
+  function sessionSummary(sec) {
+    var uniq = [];
+    sec.sessions.forEach(function (x) {
+      var v = x.dayStr + " " + fmtTime(x.startMin) + "\u2013" + fmtTime(x.endMin);
+      if (uniq.indexOf(v) === -1) uniq.push(v);
+    });
+    return uniq.join(" + ");
+  }
+
+  function findSchedule() {
+    var n = stagedCourses.length;
+    if (!n) return { assign: null, conflicts: Infinity };
+    var order = [];
+    for (var i = 0; i < n; i++) order.push(i);
+    order.sort(function (a, b) {
+      var la = locks[stagedCourses[a].code] != null ? 0 : 1;
+      var lb = locks[stagedCourses[b].code] != null ? 0 : 1;
+      if (la !== lb) return la - lb;
+      return stagedCourses[a].sections.length - stagedCourses[b].sections.length;
+    });
+
+    /* Phase 1: exact zero-conflict search (prune the moment a conflict appears) */
+    var zAssign = null;
+    (function () {
+      var cur = {};
+      var budget = 200000;
+      function dfs(pos) {
+        if (budget-- <= 0) return false;
+        if (pos === order.length) { zAssign = Object.assign({}, cur); return true; }
+        var ci = order[pos];
+        var c = stagedCourses[ci];
+        var opts = locks[c.code] != null ? [locks[c.code]] : c.sections.map(function (_, j) { return j; });
+        for (var k = 0; k < opts.length; k++) {
+          var si = opts[k];
+          var ok = true;
+          for (var p = 0; p < pos; p++) {
+            var pci = order[p];
+            if (sectionsConflict(stagedCourses[pci].sections[cur[stagedCourses[pci].code]], c.sections[si])) {
+              ok = false;
+              break;
+            }
+          }
+          if (!ok) continue;
+          cur[c.code] = si;
+          if (dfs(pos + 1)) return true;
+          delete cur[c.code];
+        }
+        return false;
+      }
+      dfs(0);
+    })();
+    if (zAssign) return { assign: zAssign, conflicts: 0 };
+
+    /* Phase 2: no zero-conflict combo — greedy + local search for a near-minimal one */
+    var cur = {};
+    order.forEach(function (ci) {
+      var c = stagedCourses[ci];
+      var opts = locks[c.code] != null ? [locks[c.code]] : c.sections.map(function (_, j) { return j; });
+      var bestSi = opts[0], bestAdd = Infinity;
+      opts.forEach(function (si) {
+        var add = 0;
+        order.forEach(function (pci) {
+          if (pci === ci) return;
+          if (cur[stagedCourses[pci].code] == null) return;
+          if (sectionsConflict(stagedCourses[pci].sections[cur[stagedCourses[pci].code]], c.sections[si])) add++;
+        });
+        if (add < bestAdd) { bestAdd = add; bestSi = si; }
+      });
+      cur[c.code] = bestSi;
+    });
+
+    function totalConflicts() {
+      var sum = 0;
+      for (var a = 0; a < order.length; a++) {
+        for (var b = a + 1; b < order.length; b++) {
+          var ca = stagedCourses[order[a]], cb = stagedCourses[order[b]];
+          if (sectionsConflict(ca.sections[cur[ca.code]], cb.sections[cur[cb.code]])) sum++;
+        }
+      }
+      return sum;
+    }
+
+    var total = totalConflicts();
+    var improved = true, iters = 0;
+    while (improved && iters++ < 300) {
+      improved = false;
+      for (var a = 0; a < order.length; a++) {
+        var ci = order[a];
+        if (locks[stagedCourses[ci].code] != null) continue;
+        var c = stagedCourses[ci];
+        var curSi = cur[c.code];
+        for (var j = 0; j < c.sections.length; j++) {
+          if (j === curSi) continue;
+          var before = 0, after = 0;
+          for (var b = 0; b < order.length; b++) {
+            if (b === a) continue;
+            var cb2 = stagedCourses[order[b]];
+            if (sectionsConflict(c.sections[curSi], cb2.sections[cur[cb2.code]])) before++;
+            if (sectionsConflict(c.sections[j], cb2.sections[cur[cb2.code]])) after++;
+          }
+          if (after < before) {
+            cur[c.code] = j;
+            total -= (before - after);
+            improved = true;
+            break;
+          }
+        }
+      }
+    }
+    return { assign: cur, conflicts: total };
+  }
+
+  function planToEntries(assign) {
+    var out = [];
+    var planBatch = "plan-" + uid();
+    stagedCourses.forEach(function (c) {
+      var si = assign[c.code];
+      if (si == null) return;
+      var sec = c.sections[si];
+      sec.sessions.forEach(function (ss) {
+        out.push({
+          id: uid(), section: sec.code, component: "", topic: c.code + " " + sec.code,
+          days: [ss.dayCode], dayStr: ss.dayStr,
+          timeStr: fmtTime(ss.startMin) + " - " + fmtTime(ss.endMin),
+          room: ss.room, instructor: ss.instructor,
+          startMin: ss.startMin, endMin: ss.endMin,
+          start: new Date(ss.startDate), end: new Date(ss.endDate),
+          course: { code: c.code, name: c.name, credits: c.units },
+          batchId: planBatch
+        });
+      });
+    });
+    return out;
+  }
+
+  function savePlanner() {
+    var data = stagedCourses.map(function (c) {
+      return {
+        code: c.code, units: c.units, name: c.name,
+        sections: c.sections.map(function (s) {
+          return {
+            code: s.code, num: s.num,
+            sessions: s.sessions.map(function (x) {
+              return {
+                dayCode: x.dayCode, dayStr: x.dayStr, startMin: x.startMin, endMin: x.endMin,
+                room: x.room, instructor: x.instructor,
+                startDate: x.startDate.getTime(), endDate: x.endDate.getTime()
+              };
+            })
+          };
+        })
+      };
+    });
+    try { localStorage.setItem(PLANNER_KEY, JSON.stringify(data)); } catch (e) {}
+    try { localStorage.setItem(PLANNER_LOCK_KEY, JSON.stringify(locks)); } catch (e) {}
+  }
+
+  function loadPlanner() {
+    try {
+      var raw = localStorage.getItem(PLANNER_KEY);
+      if (raw) {
+        stagedCourses = JSON.parse(raw).map(function (c) {
+          return {
+            code: c.code, units: c.units, name: c.name || "",
+            sections: c.sections.map(function (s) {
+              return {
+                code: s.code, num: s.num || "",
+                sessions: s.sessions.map(function (x) {
+                  return {
+                    dayCode: x.dayCode, dayStr: x.dayStr, startMin: x.startMin, endMin: x.endMin,
+                    room: x.room, instructor: x.instructor,
+                    startDate: new Date(x.startDate), endDate: new Date(x.endDate)
+                  };
+                })
+              };
+            })
+          };
+        });
+      }
+    } catch (e) { stagedCourses = []; }
+    try { locks = JSON.parse(localStorage.getItem(PLANNER_LOCK_KEY) || "{}"); } catch (e) { locks = {}; }
+  }
+
+  function renderPlanner() {
+    stagedList.innerHTML = "";
+    planStatus.innerHTML = "";
+    if (!stagedCourses.length) {
+      var p = document.createElement("p");
+      p.className = "none";
+      p.textContent = "No courses staged yet. Paste a course page and press \u201cStage Course\u201d.";
+      stagedList.appendChild(p);
+    } else {
+      stagedCourses.forEach(function (c, ci) {
+        var card = document.createElement("div");
+        card.className = "staged-course";
+        var head = document.createElement("div");
+        head.className = "staged-head";
+        var sw = document.createElement("span");
+        sw.className = "swatch";
+        sw.style.background = PALETTE[ci % PALETTE.length];
+        var info = document.createElement("div");
+        info.className = "hist-info";
+        var t = document.createElement("div");
+        t.className = "hist-topic";
+        t.textContent = c.code + (c.units != null ? " \u00b7 " + c.units + " units" : "");
+        var meta = document.createElement("div");
+        meta.className = "hist-meta";
+        meta.textContent = c.sections.length + " section" + (c.sections.length > 1 ? "s" : "");
+        info.appendChild(t); info.appendChild(meta);
+        var del = document.createElement("button");
+        del.className = "del";
+        del.title = "Remove course";
+        del.textContent = "\u00d7";
+        del.onclick = function (code) {
+          return function () {
+            stagedCourses = stagedCourses.filter(function (x) { return x.code !== code; });
+            delete locks[code];
+            planResult = null;
+            savePlanner();
+            renderPlanner();
+            renderPlanResult();
+          };
+        }(c.code);
+        head.appendChild(sw); head.appendChild(info); head.appendChild(del);
+        card.appendChild(head);
+
+        var secs = document.createElement("div");
+        secs.className = "staged-sections";
+        var chosenIdx = planResult && planResult.assign ? planResult.assign[c.code] : null;
+        c.sections.forEach(function (sec, si) {
+          var label = document.createElement("label");
+          label.className = "sec-row";
+          var cb = document.createElement("input");
+          cb.type = "checkbox";
+          cb.checked = locks[c.code] === si;
+          cb.title = "Lock this section";
+          cb.onchange = function (code, idx) {
+            return function () {
+              if (cb.checked) locks[code] = idx; else delete locks[code];
+              planResult = null;
+              savePlanner();
+              renderPlanner();
+              renderPlanResult();
+            };
+          }(c.code, si);
+          var codeEl = document.createElement("span");
+          codeEl.className = "sec-code";
+          codeEl.textContent = sec.code;
+          var m = document.createElement("span");
+          m.className = "sec-meta";
+          var sum = sessionSummary(sec);
+          m.title = sum;
+          m.textContent = sum;
+          label.appendChild(cb); label.appendChild(codeEl); label.appendChild(m);
+          if (locks[c.code] === si) label.classList.add("locked");
+          if (chosenIdx === si) label.classList.add("chosen");
+          secs.appendChild(label);
+        });
+        card.appendChild(secs);
+        stagedList.appendChild(card);
+      });
+    }
+
+    var lockList = [];
+    stagedCourses.forEach(function (c) {
+      if (locks[c.code] != null) lockList.push(c);
+    });
+    var badPairs = [];
+    for (var a = 0; a < lockList.length; a++) {
+      for (var b = a + 1; b < lockList.length; b++) {
+        if (sectionsConflict(lockList[a].sections[locks[lockList[a].code]], lockList[b].sections[locks[lockList[b].code]])) {
+          badPairs.push(lockList[a].code + " " + lockList[a].sections[locks[lockList[a].code]].code + " vs " +
+            lockList[b].code + " " + lockList[b].sections[locks[lockList[b].code]].code);
+        }
+      }
+    }
+    if (badPairs.length) {
+      var w = document.createElement("div");
+      w.className = "plan-msg warn";
+      w.textContent = "\u26a0 Locked sections conflict: " + badPairs.join("; ");
+      planStatus.appendChild(w);
+    }
+  }
+
+  function renderPlanResult() {
+    planResultEl.innerHTML = "";
+    applyPlanBtn.style.display = (planResult && planResult.assign && stagedCourses.length) ? "block" : "none";
+    if (!planResult || !planResult.assign || !stagedCourses.length) return;
+    if (planResult.conflicts === 0) {
+      var ok = document.createElement("div");
+      ok.className = "plan-msg ok";
+      ok.textContent = "\u2713 Conflict-free schedule found for all " + stagedCourses.length +
+        " course" + (stagedCourses.length > 1 ? "s" : "") + ".";
+      planResultEl.appendChild(ok);
+    } else {
+      var warn = document.createElement("div");
+      warn.className = "plan-msg warn";
+      warn.textContent = "No fully conflict-free schedule. Closest pick has " + planResult.conflicts +
+        " overlap" + (planResult.conflicts > 1 ? "s" : "") + ".";
+      planResultEl.appendChild(warn);
+    }
+    var list = document.createElement("div");
+    list.className = "plan-assign";
+    stagedCourses.forEach(function (c) {
+      var si = planResult.assign[c.code];
+      var line = document.createElement("div");
+      line.textContent = c.code + " \u2192 " + c.sections[si].code;
+      list.appendChild(line);
+    });
+    planResultEl.appendChild(list);
+  }
+
   function render() {
     renderCalendar();
     renderHistory();
@@ -913,13 +1547,23 @@
 
   /* ---------- actions ---------- */
 
-  function currentMonthOfFirst() {
+  function startOfWeek(d) {
+    var x = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    var dow = x.getDay();
+    if (dow === 0) return x;
+    x.setDate(x.getDate() - dow);
+    return x;
+  }
+
+  function anchorToFirst() {
+    var d;
     if (entries.length) {
       var first = entries.slice().sort(function (a, b) { return a.start - b.start; })[0];
-      return new Date(first.start.getFullYear(), first.start.getMonth(), 1);
+      d = first.start;
+    } else {
+      d = new Date();
     }
-    var t = new Date();
-    return new Date(t.getFullYear(), t.getMonth(), 1);
+    return viewMode === "week" ? startOfWeek(d) : new Date(d.getFullYear(), d.getMonth(), 1);
   }
 
   function setStatus(msg, isError) {
@@ -948,7 +1592,7 @@
     save();
     inputText.value = "";
     if (added) {
-      viewDate = currentMonthOfFirst();
+      viewDate = anchorToFirst();
       setStatus("Added " + added + " entr" + (added > 1 ? "ies." : "y."));
     } else {
       setStatus("Nothing new to add \u2014 check the format.", blocks.length > 0);
@@ -961,16 +1605,100 @@
     if (confirm("Delete all entries?")) {
       entries = [];
       save();
-      viewDate = currentMonthOfFirst();
+      viewDate = anchorToFirst();
       render();
     }
   };
 
-  prevBtn.onclick = function () { viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1); render(); };
-  nextBtn.onclick = function () { viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1); render(); };
-  todayBtn.onclick = function () { var t = new Date(); viewDate = new Date(t.getFullYear(), t.getMonth(), 1); render(); };
+  prevBtn.onclick = function () {
+    viewDate = (viewMode === "month")
+      ? new Date(viewDate.getFullYear(), viewDate.getMonth() - 1, 1)
+      : new Date(viewDate.getFullYear(), viewDate.getMonth(), viewDate.getDate() - 7);
+    render();
+  };
+  nextBtn.onclick = function () {
+    viewDate = (viewMode === "month")
+      ? new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 1)
+      : new Date(viewDate.getFullYear(), viewDate.getMonth(), viewDate.getDate() + 7);
+    render();
+  };
+  todayBtn.onclick = function () {
+    var t = new Date();
+    viewDate = viewMode === "week" ? startOfWeek(t) : new Date(t.getFullYear(), t.getMonth(), 1);
+    render();
+  };
+  viewToggle.onclick = function () {
+    viewMode = (viewMode === "month") ? "week" : "month";
+    viewToggle.textContent = (viewMode === "month") ? "Week" : "Month";
+    if (viewMode === "week") {
+      viewDate = startOfWeek(new Date(viewDate.getFullYear(), viewDate.getMonth(), 1));
+    } else {
+      viewDate = new Date(viewDate.getFullYear(), viewDate.getMonth(), 1);
+    }
+    render();
+  };
+
+  stageBtn.onclick = function () {
+    var parsed = parseCoursePage(inputText.value);
+    if (!parsed.length) {
+      setStatus("No course sections found \u2014 paste a full course page first.", true);
+      return;
+    }
+    var total = 0;
+    parsed.forEach(function (c) {
+      total += c.sections.length;
+      var idx = -1;
+      for (var i = 0; i < stagedCourses.length; i++) {
+        if (stagedCourses[i].code === c.code) { idx = i; break; }
+      }
+      if (idx >= 0) stagedCourses[idx] = c; else stagedCourses.push(c);
+    });
+    planResult = null;
+    savePlanner();
+    inputText.value = "";
+    setStatus("Staged " + parsed.length + " course" + (parsed.length > 1 ? "s" : "") + " (" + total + " sections).");
+    renderPlanner();
+    renderPlanResult();
+  };
+
+  clearPlanBtn.onclick = function () {
+    if (!stagedCourses.length) return;
+    if (confirm("Clear all staged courses?")) {
+      stagedCourses = [];
+      locks = {};
+      planResult = null;
+      savePlanner();
+      renderPlanner();
+      renderPlanResult();
+    }
+  };
+
+  findPlanBtn.onclick = function () {
+    if (!stagedCourses.length) { setStatus("Stage at least one course first.", true); return; }
+    planResult = findSchedule();
+    renderPlanner();
+    renderPlanResult();
+    if (planResult.assign) {
+      setStatus(planResult.conflicts ? "Found closest schedule (" + planResult.conflicts + " conflicts)." : "Found a conflict-free schedule!");
+    } else {
+      setStatus("Could not build a schedule.", true);
+    }
+  };
+
+  applyPlanBtn.onclick = function () {
+    if (!planResult || !planResult.assign) return;
+    if (entries.length && !confirm("Replace the current calendar entries with the planned schedule?")) return;
+    entries = planToEntries(planResult.assign);
+    save();
+    viewDate = anchorToFirst();
+    render();
+    setStatus("Planned schedule loaded \u2014 " + entries.length + " session" + (entries.length > 1 ? "s" : "") + " on the calendar.");
+  };
 
   renderWeekdays();
+  loadPlanner();
+  renderPlanner();
+  renderPlanResult();
   render();
 })();
 </script>
