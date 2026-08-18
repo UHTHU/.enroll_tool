@@ -543,7 +543,7 @@
       <ul id="historyList"></ul>
     </section>
 
-    <div id="appVersion" class="app-version" title="Deployed app version">v9</div>
+    <div id="appVersion" class="app-version" title="Deployed app version">v10</div>
   </aside>
 
   <main class="main">
@@ -620,7 +620,7 @@
   var PLANNER_LOCK_KEY = "enroll_planner_locks";
   var PLANNER_MODE_KEY = "enroll_planner_mode";
   var PLANNER_HOLIDAY_KEY = "enroll_planner_holidays";
-  var APP_VERSION = "v9";
+  var APP_VERSION = "v10";
   var planModeEl = document.getElementById("planMode");
   var holidayInput = document.getElementById("holidayInput");
   var holidayAddBtn = document.getElementById("holidayAddBtn");
@@ -1302,10 +1302,12 @@
       }
       var cm = ln.match(COURSE_CODE_RE);
       if (cm) {
-        cur = { code: cm[1] + " " + cm[2], units: pendingUnits, name: cm[3] || "", sem: pageSem, key: "", sections: [] };
-        pendingUnits = null;
-        courses.push(cur);
-        curSection = null;
+        if (!courses.length) {
+          cur = { code: cm[1] + " " + cm[2], units: pendingUnits, name: cm[3] || "", sem: pageSem, key: "", sections: [] };
+          pendingUnits = null;
+          courses.push(cur);
+          curSection = null;
+        }
         continue;
       }
       if (!cur) continue;
