@@ -199,6 +199,16 @@
     cursor: pointer;
   }
   .nav-btn:hover { background: #eef0f4; }
+  .nav-select {
+    height: 36px;
+    border: 1px solid var(--border);
+    background: var(--card-bg);
+    border-radius: 8px;
+    padding: 0 8px;
+    font-size: 13px;
+    color: #1f2430;
+    cursor: pointer;
+  }
   .toolbar .btn {
     width: auto;
     margin: 0;

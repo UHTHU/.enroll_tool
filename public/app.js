@@ -27,6 +27,8 @@
   var todayBtn = document.getElementById("todayBtn");
   var viewToggle = document.getElementById("viewToggle");
   var viewMode = "pattern";
+  var patternSem = "all";
+  var patternSemEl = document.getElementById("patternSem");
   var stagedList = document.getElementById("stagedList");
   var planStatus = document.getElementById("planStatus");
   var planResultEl = document.getElementById("planResult");
@@ -53,7 +55,7 @@
   var PLANNER_LOCK_KEY = "enroll_planner_locks";
   var PLANNER_MODE_KEY = "enroll_planner_mode";
   var PLANNER_HOLIDAY_KEY = "enroll_planner_holidays";
-  var APP_VERSION = "v11";
+  var APP_VERSION = "v12";
   var planModeEl = document.getElementById("planMode");
   var holidayInput = document.getElementById("holidayInput");
   var holidayAddBtn = document.getElementById("holidayAddBtn");
@@ -87,7 +89,7 @@
           days: e.days, dayStr: e.dayStr, timeStr: e.timeStr, room: e.room,
           instructor: e.instructor, startMin: e.startMin, endMin: e.endMin,
           start: new Date(e.start), end: new Date(e.end), course: e.course || null,
-          batchId: e.batchId || e.id || null
+          batchId: e.batchId || e.id || null, sem: e.sem || null
         };
       });
     } catch (e) { return []; }
@@ -100,7 +102,7 @@
         days: e.days, dayStr: e.dayStr, timeStr: e.timeStr, room: e.room,
         instructor: e.instructor, startMin: e.startMin, endMin: e.endMin,
         start: e.start.getTime(), end: e.end.getTime(), course: e.course || null,
-        batchId: e.batchId || e.id
+        batchId: e.batchId || e.id, sem: e.sem || null
       };
     });
     try { localStorage.setItem(STORE_KEY, JSON.stringify(data)); } catch (e) {}
@@ -472,6 +474,7 @@
   function patternSlots() {
     var map = {};
     entries.forEach(function (e) {
+      if (patternSem !== "all" && String(e.sem == null ? semOfEntry(e) : e.sem) !== String(patternSem)) return;
       e.days.forEach(function (d) {
         if (!map[d]) map[d] = {};
         var key = d + "|" + e.startMin + "|" + e.endMin + "|" + e.topic;
@@ -485,13 +488,21 @@
     return out;
   }
 
+  function semOfEntry(e) {
+    if (e.sem) return e.sem;
+    if (!e.start) return 1;
+    var mo = e.start.getMonth();
+    return (mo >= 0 && mo <= 4) ? 2 : 1;
+  }
+
   function renderPattern() {
     var names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
     cal.className = "calendar pattern";
-    monthTitle.textContent = "Weekly Pattern";
+    monthTitle.textContent = "Weekly Pattern" + (patternSem === "all" ? "" : " \u2014 Sem " + patternSem);
     prevBtn.style.display = "none";
     nextBtn.style.display = "none";
     todayBtn.style.display = "none";
+    if (patternSemEl) patternSemEl.style.display = "";
     var wd = document.getElementById("weekdays");
     if (wd) wd.classList.add("hidden");
     var slots = patternSlots();
@@ -513,6 +524,7 @@
     todayBtn.style.display = "";
     var wd = document.getElementById("weekdays");
     if (wd) wd.classList.remove("hidden");
+    if (patternSemEl) patternSemEl.style.display = "none";
     prevBtn.title = "Previous month";
     nextBtn.title = "Next month";
     var y = viewDate.getFullYear(), m = viewDate.getMonth();
@@ -1178,7 +1190,7 @@
           startMin: ss.startMin, endMin: ss.endMin,
           start: start, end: end,
           course: { code: c.code, name: c.name, credits: c.units },
-          batchId: planBatch
+          batchId: planBatch, sem: c.sem || 1
         });
       });
     });
@@ -1562,6 +1574,12 @@
     viewToggle.textContent = (viewMode === "month") ? "Pattern" : "Month";
     render();
   };
+  if (patternSemEl) {
+    patternSemEl.onchange = function () {
+      patternSem = patternSemEl.value;
+      if (viewMode === "pattern") render();
+    };
+  }
 
   stageBtn.onclick = function () {
     var parsed = parseCoursePage(inputText.value);    if (!parsed.length) {
