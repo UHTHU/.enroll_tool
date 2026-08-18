@@ -55,7 +55,7 @@
   var PLANNER_LOCK_KEY = "enroll_planner_locks";
   var PLANNER_MODE_KEY = "enroll_planner_mode";
   var PLANNER_HOLIDAY_KEY = "enroll_planner_holidays";
-  var APP_VERSION = "v12";
+  var APP_VERSION = "v13";
   var planModeEl = document.getElementById("planMode");
   var holidayInput = document.getElementById("holidayInput");
   var holidayAddBtn = document.getElementById("holidayAddBtn");
@@ -289,6 +289,12 @@
     return out;
   }
 
+  function datesOverlap(a, b) {
+    var s = a.start > b.start ? a.start : b.start;
+    var e = a.end < b.end ? a.end : b.end;
+    return s <= e;
+  }
+
   function computeConflicts() {
     var map = {};
     entries.forEach(function (e) {
@@ -305,6 +311,14 @@
           var a = list[i], b = list[j];
           if (a.e.id === b.e.id) continue;
           if (a.e.startMin < b.e.endMin && b.e.startMin < a.e.endMin) {
+            /* Skip false conflicts between duplicate copies of the same
+               session (same topic, same day & time, overlapping dates). */
+            if (a.e.topic === b.e.topic &&
+                a.e.startMin === b.e.startMin &&
+                a.e.endMin === b.e.endMin &&
+                datesOverlap(a.e, b.e)) {
+              continue;
+            }
             out.push({
               a: a.e, b: b.e, date: new Date(a.o),
               overlapStart: Math.max(a.e.startMin, b.e.startMin),
@@ -895,9 +909,13 @@
     blocks.forEach(function (b) {
       if (!b.times.length) return;
       var sec = { code: b.section, num: "", sessions: [] };
+      var seen = {};
       for (var t = 0; t < b.times.length; t++) {
         var tm = b.times[t].match(TEMP_DT_RE);
         if (!tm) continue;
+        var dkey = tm[1] + "|" + parseTime(tm[2]) + "|" + parseTime(tm[3]);
+        if (seen[dkey]) continue;
+        seen[dkey] = true;
         var room = b.rooms[Math.min(t, b.rooms.length - 1)] || "";
         sec.sessions.push({
           dayCode: DAY_MAP[tm[1]], dayStr: tm[1],
